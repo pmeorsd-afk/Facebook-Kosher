@@ -32,7 +32,7 @@ INCLUDES = \
 	-I$(ROOT)/src/Core \
 	-I$(ROOT)/src/Kosher
 
-COMMON_CFLAGS = -fobjc-arc -Wall -Werror -std=gnu11 -DFBP_VERSION='"1.0.8-kosher"' $(INCLUDES)
+COMMON_CFLAGS = -fobjc-arc -Wall -Werror -std=gnu11 -DFBP_VERSION='@"1.0.8-kosher"' $(INCLUDES)
 FRAMEWORKS = -framework Foundation -framework UIKit -framework Security -framework CoreText
 
 SIM_BIN = $(BUILD_DIR)/FBPKosherPolicyTests-sim
