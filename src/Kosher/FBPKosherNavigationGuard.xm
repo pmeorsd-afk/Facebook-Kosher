@@ -8,6 +8,7 @@
 #import "FBPKosherDiagnostics.h"
 #import "FBPKosherHomeController.h"
 #import "FBPKosherSearchGuard.h"
+#import "FBPPrefs.h"
 #import "FBPResources.h"
 #import "FBPSheet.h"
 #import "FBPToast.h"

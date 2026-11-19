@@ -6,6 +6,7 @@
 #import "FBPKosherPolicyEngine.h"
 #import "FBPKosherPolicyStore.h"
 #import "FBPKosherNavigationGuard.h"
+#import "FBPPrefs.h"
 #import "FBPResources.h"
 
 static NSString *const kSearchCellID = @"fbp.kosher.search.cell";

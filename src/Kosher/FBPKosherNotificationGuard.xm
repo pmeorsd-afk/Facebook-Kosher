@@ -5,6 +5,7 @@
 #import "FBPKosherCompatibilityMonitor.h"
 #import "FBPKosherNavigationGuard.h"
 #import "FBPKosherDiagnostics.h"
+#import "FBPPrefs.h"
 #import "FBPResources.h"
 
 #import <UserNotifications/UserNotifications.h>

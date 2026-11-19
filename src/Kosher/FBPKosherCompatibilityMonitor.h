@@ -40,6 +40,8 @@ typedef NS_ENUM(NSInteger, FBPKosherVersionSupport) {
                             buildNumber:(NSString *)buildNumber
                            tweakVersion:(NSString *)tweakVersion NS_DESIGNATED_INITIALIZER;
 
+- (instancetype)init NS_UNAVAILABLE;
+
 - (void)reportHook:(NSString *)identifier
           severity:(FBPKosherHookSeverity)severity
             status:(FBPKosherHookStatus)status

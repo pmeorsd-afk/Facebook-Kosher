@@ -10,6 +10,7 @@
 #import "FBPKosherNotificationGuard.h"
 #import "FBPKosherAdminController.h"
 #import "FBPSettingsController.h"
+#import "FBPPrefs.h"
 #import "FBPResources.h"
 #import "FBPSheet.h"
 

@@ -5,6 +5,7 @@
 #import "FBPKosherCompatibilityMonitor.h"
 #import "FBPPrefs.h"
 
+#import <CommonCrypto/CommonCrypto.h>
 #import <CommonCrypto/CommonKeyDerivation.h>
 #import <Security/Security.h>
 #import <UIKit/UIKit.h>

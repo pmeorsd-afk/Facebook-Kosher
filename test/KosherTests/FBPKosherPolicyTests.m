@@ -115,8 +115,9 @@ static NSUInteger gFailed = 0;
 #define TEST_ASSERT(cond, fmt, ...)                                                              \
     do {                                                                                         \
         if (!(cond)) {                                                                           \
-            fprintf(stderr, "  ASSERTION FAILED (%s:%d): " fmt "\n", __FILE__, __LINE__,         \
-                    ##__VA_ARGS__);                                                              \
+            NSString *msg__ = [NSString stringWithFormat:@"" fmt, ##__VA_ARGS__];                \
+            fprintf(stderr, "  ASSERTION FAILED (%s:%d): %s\n", __FILE__, __LINE__,              \
+                    msg__.UTF8String);                                                           \
             return NO;                                                                           \
         }                                                                                        \
     } while (0)
@@ -135,14 +136,6 @@ static void RunTest(const char *name, FBPTestFn fn) {
         }
     }
 }
-
-typedef struct {
-    FBPKosherMemoryCredentialBacking *__unsafe_unretained backing;
-    NSURL *__unsafe_unretained tempDir;
-    FBPKosherCompatibilityMonitor *__unsafe_unretained monitor;
-    FBPKosherPolicyStore *__unsafe_unretained store;
-    FBPKosherPolicyEngine *__unsafe_unretained engine;
-} FBPTestEnv;
 
 static FBPKosherCompatibilityMonitor *CreateHealthyMonitor(NSString *version) {
     FBPKosherCompatibilityMonitor *mon =
