@@ -11,7 +11,8 @@ BUILD_DIR = .build
 CORE_SRCS = \
 	$(ROOT)/src/Core/FBPlus.m \
 	$(ROOT)/src/Core/FBPPrefs.m \
-	$(ROOT)/src/Core/FBPResources.m
+	$(ROOT)/src/Core/FBPResources.m \
+	$(ROOT)/src/Core/FBPTrace.m
 
 KOSHER_SRCS = \
 	$(ROOT)/src/Kosher/FBPKosherTypes.m \
