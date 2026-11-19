@@ -26,6 +26,11 @@ static BOOL FBPViewIsInsideTweakOrSystemChrome(UIView *view) {
         if ([cls hasPrefix:@"FBP"] ||
             [cls hasPrefix:@"_UI"] ||
             [cls hasPrefix:@"UIKeyboard"] ||
+            [cls hasPrefix:@"UILaunch"] ||
+            [cls hasPrefix:@"FBSplash"] ||
+            [cls hasPrefix:@"FBLaunch"] ||
+            [cls isEqualToString:@"UIButton"] ||
+            [cls isEqualToString:@"UITabBarButton"] ||
             [cls isEqualToString:@"UINavigationBar"] ||
             [cls isEqualToString:@"UITabBar"] ||
             [cls isEqualToString:@"UISwitch"] ||
@@ -37,12 +42,18 @@ static BOOL FBPViewIsInsideTweakOrSystemChrome(UIView *view) {
     return NO;
 }
 
-static BOOL FBPImageViewIsPermittedChrome(UIImageView *iv, UIImage *image) {
+static BOOL FBPImageIsPermittedBasic(UIImage *image) {
     if (!image) return YES;
     if (@available(iOS 13.0, *)) {
         if (image.isSymbolImage) return YES;
     }
     if (image.renderingMode == UIImageRenderingModeAlwaysTemplate) return YES;
+    return NO;
+}
+
+static BOOL FBPImageViewIsPermittedChrome(UIImageView *iv, UIImage *image) {
+    if (FBPImageIsPermittedBasic(image)) return YES;
+    if (!NSThread.isMainThread) return NO;
     if (FBPViewIsInsideTweakOrSystemChrome(iv)) return YES;
 
     // Small UI button/cell chrome icons (<= 28pt) rendered inside UIKit controls.
@@ -55,8 +66,12 @@ static BOOL FBPImageViewIsPermittedChrome(UIImageView *iv, UIImage *image) {
     return NO;
 }
 
+static NSURL *FBPBlockedPlaceholderURL(void) {
+    return [NSURL URLWithString:@"https://127.0.0.1:1/fbp-kosher-blocked"];
+}
+
 static NSURLRequest *FBPCancelledPlaceholderRequest(void) {
-    return [NSURLRequest requestWithURL:[NSURL URLWithString:@"about:blank"]];
+    return [NSURLRequest requestWithURL:FBPBlockedPlaceholderURL()];
 }
 
 static NSError *FBPBlockedMediaError(void) {
@@ -107,23 +122,27 @@ static void FBPEnsureTextOnlyUserScriptOnWebView(WKWebView *webView) {
 
     // Block remote/photographic/GIF/avatar images before rendering.
     %orig(nil);
-    self.animationImages = nil;
-    self.highlightedImage = nil;
+
+    if (!NSThread.isMainThread) {
+        return;
+    }
 
     // Disable tap-to-zoom / preview interaction on blocked media containers outside buttons.
-    if (![self.superview isKindOfClass:UIControl.class]) {
+    if (self.superview && ![self.superview isKindOfClass:UIControl.class]) {
         self.userInteractionEnabled = NO;
     }
 
-    // Show a safe local SF Symbol placeholder on larger content image boxes.
-    CGSize boundsSize = self.bounds.size;
-    if (boundsSize.width >= 56.0 && boundsSize.height >= 56.0) {
-        if (@available(iOS 13.0, *)) {
-            UIImage *placeholder = [UIImage fbp_symbolNamed:@"text.justify.right" size:22.0];
-            if (placeholder) {
-                self.tintColor = UIColor.tertiaryLabelColor;
-                self.contentMode = UIViewContentModeCenter;
-                %orig(placeholder);
+    // Show a safe local SF Symbol placeholder only on live main-thread views.
+    if (self.window != nil) {
+        CGSize boundsSize = self.bounds.size;
+        if (boundsSize.width >= 56.0 && boundsSize.height >= 56.0) {
+            if (@available(iOS 13.0, *)) {
+                UIImage *placeholder = [UIImage fbp_symbolNamed:@"text.justify.right" size:22.0];
+                if (placeholder) {
+                    self.tintColor = UIColor.tertiaryLabelColor;
+                    self.contentMode = UIViewContentModeCenter;
+                    %orig(placeholder);
+                }
             }
         }
     }
@@ -138,7 +157,8 @@ static void FBPEnsureTextOnlyUserScriptOnWebView(WKWebView *webView) {
 }
 
 - (void)setAnimationImages:(NSArray<UIImage *> *)animationImages {
-    if (FBPKosherStrictModeActive() && animationImages.count > 0 && !FBPViewIsInsideTweakOrSystemChrome(self)) {
+    if (FBPKosherStrictModeActive() && animationImages.count > 0 &&
+        (!NSThread.isMainThread || !FBPViewIsInsideTweakOrSystemChrome(self))) {
         %orig(nil);
         return;
     }
@@ -158,9 +178,13 @@ static void FBPEnsureTextOnlyUserScriptOnWebView(WKWebView *webView) {
 - (NSURLSessionDataTask *)dataTaskWithRequest:(NSURLRequest *)request {
     if (FBPKosherStrictModeActive() && request.URL &&
         ![FBPKosherPolicyEngine.shared evaluateMediaURL:request.URL].effectiveAllowed) {
-        NSURLSessionDataTask *dummy = %orig(FBPCancelledPlaceholderRequest());
-        [dummy cancel];
-        return dummy;
+        @try {
+            NSURLSessionDataTask *dummy = %orig(FBPCancelledPlaceholderRequest());
+            [dummy cancel];
+            return dummy;
+        } @catch (__unused NSException *e) {
+            return nil;
+        }
     }
     return %orig;
 }
@@ -168,9 +192,13 @@ static void FBPEnsureTextOnlyUserScriptOnWebView(WKWebView *webView) {
 - (NSURLSessionDataTask *)dataTaskWithURL:(NSURL *)url {
     if (FBPKosherStrictModeActive() && url &&
         ![FBPKosherPolicyEngine.shared evaluateMediaURL:url].effectiveAllowed) {
-        NSURLSessionDataTask *dummy = %orig([NSURL URLWithString:@"about:blank"]);
-        [dummy cancel];
-        return dummy;
+        @try {
+            NSURLSessionDataTask *dummy = %orig(FBPBlockedPlaceholderURL());
+            [dummy cancel];
+            return dummy;
+        } @catch (__unused NSException *e) {
+            return nil;
+        }
     }
     return %orig;
 }
@@ -179,15 +207,32 @@ static void FBPEnsureTextOnlyUserScriptOnWebView(WKWebView *webView) {
                             completionHandler:(void (^)(NSData *data, NSURLResponse *response, NSError *error))completionHandler {
     if (FBPKosherStrictModeActive() && request.URL &&
         ![FBPKosherPolicyEngine.shared evaluateMediaURL:request.URL].effectiveAllowed) {
-        NSURLSessionDataTask *dummy = %orig(FBPCancelledPlaceholderRequest(),
-                                            ^(__unused NSData *d, __unused NSURLResponse *r, __unused NSError *e) {});
-        [dummy cancel];
-        if (completionHandler) {
-            dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
-                completionHandler(nil, nil, FBPBlockedMediaError());
-            });
+        BOOL isBg = NO;
+        @try {
+            isBg = (self.configuration.identifier.length > 0);
+        } @catch (__unused NSException *e) {}
+        if (isBg) {
+            // Background sessions forbid completion-handler tasks; avoid NSGenericException.
+            if (completionHandler) {
+                dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+                    completionHandler(nil, nil, FBPBlockedMediaError());
+                });
+            }
+            return nil;
         }
-        return dummy;
+        @try {
+            NSURLSessionDataTask *dummy = %orig(FBPCancelledPlaceholderRequest(),
+                                                ^(__unused NSData *d, __unused NSURLResponse *r, __unused NSError *e) {});
+            [dummy cancel];
+            if (completionHandler) {
+                dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+                    completionHandler(nil, nil, FBPBlockedMediaError());
+                });
+            }
+            return dummy;
+        } @catch (__unused NSException *e) {
+            return nil;
+        }
     }
     return %orig;
 }
@@ -196,15 +241,31 @@ static void FBPEnsureTextOnlyUserScriptOnWebView(WKWebView *webView) {
                         completionHandler:(void (^)(NSData *data, NSURLResponse *response, NSError *error))completionHandler {
     if (FBPKosherStrictModeActive() && url &&
         ![FBPKosherPolicyEngine.shared evaluateMediaURL:url].effectiveAllowed) {
-        NSURLSessionDataTask *dummy = %orig([NSURL URLWithString:@"about:blank"],
-                                            ^(__unused NSData *d, __unused NSURLResponse *r, __unused NSError *e) {});
-        [dummy cancel];
-        if (completionHandler) {
-            dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
-                completionHandler(nil, nil, FBPBlockedMediaError());
-            });
+        BOOL isBg = NO;
+        @try {
+            isBg = (self.configuration.identifier.length > 0);
+        } @catch (__unused NSException *e) {}
+        if (isBg) {
+            if (completionHandler) {
+                dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+                    completionHandler(nil, nil, FBPBlockedMediaError());
+                });
+            }
+            return nil;
         }
-        return dummy;
+        @try {
+            NSURLSessionDataTask *dummy = %orig(FBPBlockedPlaceholderURL(),
+                                                ^(__unused NSData *d, __unused NSURLResponse *r, __unused NSError *e) {});
+            [dummy cancel];
+            if (completionHandler) {
+                dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+                    completionHandler(nil, nil, FBPBlockedMediaError());
+                });
+            }
+            return dummy;
+        } @catch (__unused NSException *e) {
+            return nil;
+        }
     }
     return %orig;
 }
@@ -212,9 +273,13 @@ static void FBPEnsureTextOnlyUserScriptOnWebView(WKWebView *webView) {
 - (NSURLSessionDownloadTask *)downloadTaskWithRequest:(NSURLRequest *)request {
     if (FBPKosherStrictModeActive() && request.URL &&
         ![FBPKosherPolicyEngine.shared evaluateMediaURL:request.URL].effectiveAllowed) {
-        NSURLSessionDownloadTask *dummy = %orig(FBPCancelledPlaceholderRequest());
-        [dummy cancel];
-        return dummy;
+        @try {
+            NSURLSessionDownloadTask *dummy = %orig(FBPCancelledPlaceholderRequest());
+            [dummy cancel];
+            return dummy;
+        } @catch (__unused NSException *e) {
+            return nil;
+        }
     }
     return %orig;
 }
@@ -222,9 +287,13 @@ static void FBPEnsureTextOnlyUserScriptOnWebView(WKWebView *webView) {
 - (NSURLSessionDownloadTask *)downloadTaskWithURL:(NSURL *)url {
     if (FBPKosherStrictModeActive() && url &&
         ![FBPKosherPolicyEngine.shared evaluateMediaURL:url].effectiveAllowed) {
-        NSURLSessionDownloadTask *dummy = %orig([NSURL URLWithString:@"about:blank"]);
-        [dummy cancel];
-        return dummy;
+        @try {
+            NSURLSessionDownloadTask *dummy = %orig(FBPBlockedPlaceholderURL());
+            [dummy cancel];
+            return dummy;
+        } @catch (__unused NSException *e) {
+            return nil;
+        }
     }
     return %orig;
 }
@@ -419,88 +488,89 @@ void FBPInitKosherMediaGuard(void) {
 
     Class imageViewCls = objc_getClass("UIImageView");
     if (imageViewCls && [imageViewCls instancesRespondToSelector:@selector(setImage:)]) {
-        FBP_ONCE(gKosherImgGuard) { %init(FBPKosherMediaImageView); }
-        [monitor reportHook:@"MediaGuard.UIImageView"
-                   severity:FBPKosherHookSeverityCritical
-                     status:FBPKosherHookStatusInstalled
-                     detail:@"UIImageView text-only filter active"];
-    } else {
-        [monitor reportHook:@"MediaGuard.UIImageView"
-                   severity:FBPKosherHookSeverityCritical
-                     status:FBPKosherHookStatusMissing
-                     detail:@"UIImageView class/selector missing"];
+        FBP_ONCE(gKosherImgGuard) {
+            %init(FBPKosherMediaImageView);
+            [monitor reportHook:@"MediaGuard.UIImageView"
+                       severity:FBPKosherHookSeverityCritical
+                         status:FBPKosherHookStatusInstalled
+                         detail:@"UIImageView text-only filter active"];
+        }
     }
 
     Class sessionCls = objc_getClass("NSURLSession");
     if (sessionCls && [sessionCls instancesRespondToSelector:@selector(dataTaskWithRequest:completionHandler:)]) {
-        FBP_ONCE(gKosherSessionGuard) { %init(FBPKosherMediaURLSession); }
-        [monitor reportHook:@"MediaGuard.NSURLSession"
-                   severity:FBPKosherHookSeverityCritical
-                     status:FBPKosherHookStatusInstalled
-                     detail:@"NSURLSession media CDN filter active"];
-    } else {
-        [monitor reportHook:@"MediaGuard.NSURLSession"
-                   severity:FBPKosherHookSeverityCritical
-                     status:FBPKosherHookStatusMissing
-                     detail:@"NSURLSession selector missing"];
+        FBP_ONCE(gKosherSessionGuard) {
+            %init(FBPKosherMediaURLSession);
+            [monitor reportHook:@"MediaGuard.NSURLSession"
+                       severity:FBPKosherHookSeverityCritical
+                         status:FBPKosherHookStatusInstalled
+                         detail:@"NSURLSession media CDN filter active"];
+        }
     }
 
     Class avPlayerCls = objc_getClass("AVPlayer");
     if (avPlayerCls && [avPlayerCls instancesRespondToSelector:@selector(play)]) {
-        FBP_ONCE(gKosherAVGuard) { %init(FBPKosherMediaAVPlayer); }
-        [monitor reportHook:@"MediaGuard.AVPlayer"
-                   severity:FBPKosherHookSeverityCritical
-                     status:FBPKosherHookStatusInstalled
-                     detail:@"AVPlayer/AVPlayerLayer video block active"];
-    } else {
-        [monitor reportHook:@"MediaGuard.AVPlayer"
-                   severity:FBPKosherHookSeverityCritical
-                     status:FBPKosherHookStatusMissing
-                     detail:@"AVPlayer missing"];
+        FBP_ONCE(gKosherAVGuard) {
+            %init(FBPKosherMediaAVPlayer);
+            [monitor reportHook:@"MediaGuard.AVPlayer"
+                       severity:FBPKosherHookSeverityCritical
+                         status:FBPKosherHookStatusInstalled
+                         detail:@"AVPlayer/AVPlayerLayer video block active"];
+        }
     }
 
     Class wkCls = objc_getClass("WKWebView");
     if (wkCls && [wkCls instancesRespondToSelector:@selector(loadRequest:)]) {
-        FBP_ONCE(gKosherWKGuard) { %init(FBPKosherMediaWKWebView); }
-        [monitor reportHook:@"MediaGuard.WKWebView"
-                   severity:FBPKosherHookSeveritySurface
-                     status:FBPKosherHookStatusInstalled
-                     detail:@"WKWebView script & URL filter active"];
+        FBP_ONCE(gKosherWKGuard) {
+            %init(FBPKosherMediaWKWebView);
+            [monitor reportHook:@"MediaGuard.WKWebView"
+                       severity:FBPKosherHookSeveritySurface
+                         status:FBPKosherHookStatusInstalled
+                         detail:@"WKWebView script & URL filter active"];
+        }
     }
 
     Class fbWebImg = objc_getClass("FBWebImageView");
     if (fbWebImg && [fbWebImg instancesRespondToSelector:@selector(setImageURL:)]) {
-        FBP_ONCE(gKosherFBWebImg) { %init(FBPKosherFBWebImageView); }
-        [monitor reportHook:@"MediaGuard.FBWebImageView"
-                   severity:FBPKosherHookSeveritySurface
-                     status:FBPKosherHookStatusInstalled
-                     detail:@"FBWebImageView installed"];
+        FBP_ONCE(gKosherFBWebImg) {
+            %init(FBPKosherFBWebImageView);
+            [monitor reportHook:@"MediaGuard.FBWebImageView"
+                       severity:FBPKosherHookSeveritySurface
+                         status:FBPKosherHookStatusInstalled
+                         detail:@"FBWebImageView installed"];
+        }
     }
 
     Class rctImg = objc_getClass("RCTImageView");
     if (rctImg && [rctImg instancesRespondToSelector:@selector(setImageSources:)]) {
-        FBP_ONCE(gKosherRCTImg) { %init(FBPKosherRCTImageView); }
-        [monitor reportHook:@"MediaGuard.RCTImageView"
-                   severity:FBPKosherHookSeveritySurface
-                     status:FBPKosherHookStatusInstalled
-                     detail:@"RCTImageView installed"];
+        FBP_ONCE(gKosherRCTImg) {
+            %init(FBPKosherRCTImageView);
+            [monitor reportHook:@"MediaGuard.RCTImageView"
+                       severity:FBPKosherHookSeveritySurface
+                         status:FBPKosherHookStatusInstalled
+                         detail:@"RCTImageView installed"];
+        }
     }
 
     Class fnfPlayer = objc_getClass("FNFAVPlayer");
     if (fnfPlayer && [fnfPlayer instancesRespondToSelector:@selector(play)]) {
-        FBP_ONCE(gKosherFNFPlayer) { %init(FBPKosherFNFAVPlayer); }
-        [monitor reportHook:@"MediaGuard.FNFAVPlayer"
-                   severity:FBPKosherHookSeveritySurface
-                     status:FBPKosherHookStatusInstalled
-                     detail:@"FNFAVPlayer installed"];
+        FBP_ONCE(gKosherFNFPlayer) {
+            %init(FBPKosherFNFAVPlayer);
+            [monitor reportHook:@"MediaGuard.FNFAVPlayer"
+                       severity:FBPKosherHookSeveritySurface
+                         status:FBPKosherHookStatusInstalled
+                         detail:@"FNFAVPlayer installed"];
+        }
     }
 
     Class fbVideoCtrl = objc_getClass("FBVideoPlaybackController");
     if (fbVideoCtrl && [fbVideoCtrl instancesRespondToSelector:@selector(play)]) {
-        FBP_ONCE(gKosherFBVideoCtrl) { %init(FBPKosherVideoPlaybackController); }
-        [monitor reportHook:@"MediaGuard.FBVideoPlaybackController"
-                   severity:FBPKosherHookSeveritySurface
-                     status:FBPKosherHookStatusInstalled
-                     detail:@"FBVideoPlaybackController installed"];
+        FBP_ONCE(gKosherFBVideoCtrl) {
+            %init(FBPKosherVideoPlaybackController);
+            [monitor reportHook:@"MediaGuard.FBVideoPlaybackController"
+                       severity:FBPKosherHookSeveritySurface
+                         status:FBPKosherHookStatusInstalled
+                         detail:@"FBVideoPlaybackController installed"];
+        }
     }
 }

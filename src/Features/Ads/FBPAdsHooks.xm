@@ -483,15 +483,12 @@ void FBPInitAdsHooks(void) {
     // latches once the class finally arrives.
     Class networking = objc_getClass("RCTNetworking");
     if (networking && [networking instancesRespondToSelector:@selector(handlerForRequest:)]) {
-        FBP_ONCE(gMarketplaceAds) { %init(FBPMarketplaceAds); }
-        [FBPKosherCompatibilityMonitor.shared reportHook:@"Marketplace.RCTNetworking"
-                                                 severity:FBPKosherHookSeveritySurface
-                                                   status:FBPKosherHookStatusInstalled
-                                                   detail:@"RCTNetworking GraphQL guard active (Hermes GYSJ still requires fail-closed until verified)"];
-    } else {
-        [FBPKosherCompatibilityMonitor.shared reportHook:@"Marketplace.RCTNetworking"
-                                                 severity:FBPKosherHookSeveritySurface
-                                                   status:FBPKosherHookStatusPending
-                                                   detail:@"FBReactNativeProductsFramework not yet loaded; Marketplace kept blocked"];
+        FBP_ONCE(gMarketplaceAds) {
+            %init(FBPMarketplaceAds);
+            [FBPKosherCompatibilityMonitor.shared reportHook:@"Marketplace.RCTNetworking"
+                                                     severity:FBPKosherHookSeveritySurface
+                                                       status:FBPKosherHookStatusInstalled
+                                                       detail:@"RCTNetworking GraphQL guard active (Hermes GYSJ still requires fail-closed until verified)"];
+        }
     }
 }

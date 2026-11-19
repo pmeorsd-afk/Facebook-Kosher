@@ -113,14 +113,50 @@
 // extension's session lookup.
 
 #import <Security/Security.h>
+#import <dlfcn.h>
+#import <mach-o/dyld.h>
+#import <string.h>
 
 #import "Header.h"
 #import "../Core/fishhook/fishhook.h"
+
+static OSStatus (*realSecItemAdd)(CFDictionaryRef attributes, CFTypeRef *result);
+static OSStatus (*realSecItemCopyMatching)(CFDictionaryRef query, CFTypeRef *result);
+static OSStatus (*realSecItemUpdate)(CFDictionaryRef query, CFDictionaryRef attributesToUpdate);
+static OSStatus (*realSecItemDelete)(CFDictionaryRef query);
 
 static OSStatus (*origSecItemAdd)(CFDictionaryRef attributes, CFTypeRef *result);
 static OSStatus (*origSecItemCopyMatching)(CFDictionaryRef query, CFTypeRef *result);
 static OSStatus (*origSecItemUpdate)(CFDictionaryRef query, CFDictionaryRef attributesToUpdate);
 static OSStatus (*origSecItemDelete)(CFDictionaryRef query);
+
+static void fbpResolveRealSecuritySymbols(void) {
+	static dispatch_once_t onceToken;
+	dispatch_once(&onceToken, ^{
+		void *sec = dlopen("/System/Library/Frameworks/Security.framework/Security", RTLD_LAZY);
+		if (sec) {
+			realSecItemAdd = (OSStatus (*)(CFDictionaryRef, CFTypeRef *))dlsym(sec, "SecItemAdd");
+			realSecItemCopyMatching = (OSStatus (*)(CFDictionaryRef, CFTypeRef *))dlsym(sec, "SecItemCopyMatching");
+			realSecItemUpdate = (OSStatus (*)(CFDictionaryRef, CFDictionaryRef))dlsym(sec, "SecItemUpdate");
+			realSecItemDelete = (OSStatus (*)(CFDictionaryRef))dlsym(sec, "SecItemDelete");
+		}
+	});
+}
+
+static BOOL fbpExternalKeychainPatcherLoaded(void) {
+	uint32_t count = _dyld_image_count();
+	for (uint32_t i = 0; i < count; i++) {
+		const char *name = _dyld_get_image_name(i);
+		if (!name) continue;
+		if (strstr(name, "asignpatch") ||
+		    strstr(name, "blatantsPatch") ||
+		    strstr(name, "SideloadKeychain") ||
+		    strstr(name, "KeychainFix")) {
+			return YES;
+		}
+	}
+	return NO;
+}
 
 #pragma mark - Runtime switch
 
@@ -174,7 +210,9 @@ static NSString *const kProbeAccount = @"com.shajon.fbplus.accessGroupProbe.afu"
 // It calls the ORIGINAL SecItem* functions, not the rebound ones, because this
 // runs from inside the shims: going through the shims would recurse.
 static NSString *probeAccessGroupSentinel(OSStatus *statusOut) {
-	if (!origSecItemCopyMatching || !origSecItemAdd) {
+	OSStatus (*copyFn)(CFDictionaryRef, CFTypeRef *) = realSecItemCopyMatching ?: origSecItemCopyMatching;
+	OSStatus (*addFn)(CFDictionaryRef, CFTypeRef *) = realSecItemAdd ?: origSecItemAdd;
+	if (!copyFn || !addFn) {
 		if (statusOut) *statusOut = errSecUnimplemented;
 		return nil;
 	}
@@ -192,13 +230,13 @@ static NSString *probeAccessGroupSentinel(OSStatus *statusOut) {
 	search[(__bridge NSString *)kSecMatchLimit] = (__bridge id)kSecMatchLimitOne;
 
 	CFTypeRef result = nil;
-	OSStatus status = origSecItemCopyMatching((__bridge CFDictionaryRef)search, &result);
+	OSStatus status = copyFn((__bridge CFDictionaryRef)search, &result);
 	if (status == errSecItemNotFound) {
 		NSMutableDictionary *add = [common mutableCopy];
 		add[(__bridge NSString *)kSecAttrAccessible] =
 			(__bridge id)kSecAttrAccessibleAfterFirstUnlock;
 		add[(__bridge NSString *)kSecValueData] = [NSData data];
-		status = origSecItemAdd((__bridge CFDictionaryRef)add, &result);
+		status = addFn((__bridge CFDictionaryRef)add, &result);
 	}
 	if (statusOut) *statusOut = status;
 
@@ -381,47 +419,84 @@ static void logSecCall(const char *name, CFDictionaryRef query, OSStatus status)
 
 #pragma mark - Shims
 
+static _Thread_local BOOL gFBPInSecShim = NO;
+
 static OSStatus fbpSecItemAdd(CFDictionaryRef attributes, CFTypeRef *result) {
+	OSStatus (*nextAdd)(CFDictionaryRef, CFTypeRef *) = realSecItemAdd ?: origSecItemAdd;
+	if (!nextAdd) return errSecUnimplemented;
+	if (gFBPInSecShim) return nextAdd(attributes, result);
+
+	gFBPInSecShim = YES;
+	OSStatus status;
 	@autoreleasepool {
-		OSStatus status = origSecItemAdd((__bridge CFDictionaryRef)effectiveQuery(attributes), result);
+		status = nextAdd((__bridge CFDictionaryRef)effectiveQuery(attributes), result);
 		logSecCall("SecItemAdd", attributes, status);
-		return status;
 	}
+	gFBPInSecShim = NO;
+	return status;
 }
 
 static OSStatus fbpSecItemCopyMatching(CFDictionaryRef query, CFTypeRef *result) {
+	OSStatus (*nextCopy)(CFDictionaryRef, CFTypeRef *) = realSecItemCopyMatching ?: origSecItemCopyMatching;
+	if (!nextCopy) return errSecUnimplemented;
+	if (gFBPInSecShim) return nextCopy(query, result);
+
+	gFBPInSecShim = YES;
+	OSStatus status;
 	@autoreleasepool {
-		OSStatus status = origSecItemCopyMatching((__bridge CFDictionaryRef)effectiveQuery(query), result);
+		status = nextCopy((__bridge CFDictionaryRef)effectiveQuery(query), result);
 		logSecCall("SecItemCopyMatching", query, status);
-		return status;
 	}
+	gFBPInSecShim = NO;
+	return status;
 }
 
 static OSStatus fbpSecItemUpdate(CFDictionaryRef query, CFDictionaryRef attributesToUpdate) {
+	OSStatus (*nextUpdate)(CFDictionaryRef, CFDictionaryRef) = realSecItemUpdate ?: origSecItemUpdate;
+	if (!nextUpdate) return errSecUnimplemented;
+	if (gFBPInSecShim) return nextUpdate(query, attributesToUpdate);
+
+	gFBPInSecShim = YES;
+	OSStatus status;
 	@autoreleasepool {
-		OSStatus status = origSecItemUpdate(
+		status = nextUpdate(
 			(__bridge CFDictionaryRef)effectiveQuery(query),
 			(__bridge CFDictionaryRef)effectiveUpdateAttributes(attributesToUpdate));
 		logSecCall("SecItemUpdate", query, status);
-		return status;
 	}
+	gFBPInSecShim = NO;
+	return status;
 }
 
 static OSStatus fbpSecItemDelete(CFDictionaryRef query) {
+	OSStatus (*nextDelete)(CFDictionaryRef) = realSecItemDelete ?: origSecItemDelete;
+	if (!nextDelete) return errSecUnimplemented;
+	if (gFBPInSecShim) return nextDelete(query);
+
+	gFBPInSecShim = YES;
+	OSStatus status;
 	@autoreleasepool {
-		OSStatus status = origSecItemDelete((__bridge CFDictionaryRef)effectiveQuery(query));
+		status = nextDelete((__bridge CFDictionaryRef)effectiveQuery(query));
 		logSecCall("SecItemDelete", query, status);
-		return status;
 	}
+	gFBPInSecShim = NO;
+	return status;
 }
 
-// Installed unconditionally, in the main app and in the notification extension
-// alike — there is no longer a second rebinder to stand down for. See "WHY THE
-// MAIN APP RUNS THIS TOO" at the top of this file.
+// Installed when no external third-party Keychain patcher is already bound in the
+// process. Using Security.framework dlsym pointers + _Thread_local re-entrancy
+// prevents infinite mutual-recursion cycles when another dylib also fishhooks SecItem*.
 void rebindSecFuncs() {
 	// Warmed here, before the shims can be reached, so the preference read never
 	// runs inside a keychain call.
 	primeKeychainRebindPref();
+	fbpResolveRealSecuritySymbols();
+
+	if (fbpExternalKeychainPatcherLoaded()) {
+		PILog(@"External keychain patcher already loaded — skipping SecItem fishhook rebinds");
+		FBPDiagLog(@"External keychain patcher loaded — skipping SecItem rebinds to avoid mutual recursion");
+		return;
+	}
 
 	struct rebinding rebinds[4] = {
 		{"SecItemAdd", (void *)fbpSecItemAdd, (void **)&origSecItemAdd},
@@ -432,6 +507,13 @@ void rebindSecFuncs() {
 	// The rebind itself must always run — only the logs are build-gated, so the
 	// result is unused in a plain release build.
 	__attribute__((unused)) int result = rebind_symbols(rebinds, 4);
+	// Pin originals directly to Security.framework symbols so calls never bounce
+	// into an external patcher's SecItem* wrapper.
+	if (realSecItemAdd) origSecItemAdd = realSecItemAdd;
+	if (realSecItemCopyMatching) origSecItemCopyMatching = realSecItemCopyMatching;
+	if (realSecItemUpdate) origSecItemUpdate = realSecItemUpdate;
+	if (realSecItemDelete) origSecItemDelete = realSecItemDelete;
+
 	PILog(@"rebind_symbols result: %d", result);
 	FBPDiagLog(@"SecItem rebinds installed (result %d), rebind %@", result,
 	           gKeychainRebindEnabled ? @"enabled" : @"disabled");

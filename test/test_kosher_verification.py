@@ -126,18 +126,22 @@ class TestRepositoryAndBuildIntegration(unittest.TestCase):
 
     def test_entry_initializes_kosher_guards(self) -> None:
         entry = read_text("src/Core/FBPEntry.xm")
-        required_tokens = [
-            "FBPKosherPolicyStore",
+        chrome = read_text("src/Features/AppChrome/FBPChromeHooks.xm")
+        for tok in [
             "FBPKosherCompatibilityMonitor",
-            "FBPKosherPolicyEngine",
-            "FBPKosherPurgeMediaCaches",
             "FBPInitKosherMediaGuard",
             "FBPInitKosherNavigationGuard",
             "FBPInitKosherNotificationGuard",
-            "evaluateStartupHealth",
-        ]
-        for tok in required_tokens:
+        ]:
             self.assertIn(tok, entry, f"FBPEntry.xm missing required Kosher init call: {tok}")
+        for tok in [
+            "FBPKosherPolicyStore",
+            "FBPKosherPolicyEngine",
+            "FBPKosherPurgeMediaCaches",
+            "evaluateStartupHealth",
+            "FBPKosherHomeController",
+        ]:
+            self.assertIn(tok, chrome, f"FBPChromeHooks.xm missing required Kosher launch call: {tok}")
 
 
 class TestLocalizationAndRTL(unittest.TestCase):

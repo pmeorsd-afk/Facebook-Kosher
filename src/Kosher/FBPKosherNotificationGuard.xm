@@ -204,16 +204,13 @@ BOOL FBPKosherShouldAllowPushEvaluate(id pushObject) {
 void FBPInitKosherNotificationGuard(void) {
     Class centerCls = objc_getClass("UNUserNotificationCenter");
     if (centerCls && [centerCls instancesRespondToSelector:@selector(addNotificationRequest:withCompletionHandler:)]) {
-        FBP_ONCE(gKosherUNCenter) { %init(FBPKosherUNCenter); }
-        [FBPKosherCompatibilityMonitor.shared reportHook:@"NotificationGuard.UNUserNotificationCenter"
-                                                 severity:FBPKosherHookSeveritySurface
-                                                   status:FBPKosherHookStatusInstalled
-                                                   detail:@"UNUserNotificationCenter filter active"];
-    } else {
-        [FBPKosherCompatibilityMonitor.shared reportHook:@"NotificationGuard.UNUserNotificationCenter"
-                                                 severity:FBPKosherHookSeveritySurface
-                                                   status:FBPKosherHookStatusMissing
-                                                   detail:@"UNUserNotificationCenter missing"];
+        FBP_ONCE(gKosherUNCenter) {
+            %init(FBPKosherUNCenter);
+            [FBPKosherCompatibilityMonitor.shared reportHook:@"NotificationGuard.UNUserNotificationCenter"
+                                                     severity:FBPKosherHookSeveritySurface
+                                                       status:FBPKosherHookStatusInstalled
+                                                       detail:@"UNUserNotificationCenter filter active"];
+        }
     }
 }
 

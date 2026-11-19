@@ -251,15 +251,12 @@ void FBPInitLinkBridge(void) {
     Class appDelegate = objc_getClass("FBBaseAppDelegate");
     if (appDelegate &&
         [appDelegate instancesRespondToSelector:@selector(application:openURL:options:)]) {
-        FBP_ONCE(gLinkBridge) { %init(FBPLinkBridge); }
-        [FBPKosherCompatibilityMonitor.shared reportHook:@"LinkBridge.AppDelegate"
-                                                 severity:FBPKosherHookSeverityCritical
-                                                   status:FBPKosherHookStatusInstalled
-                                                   detail:@"AppDelegate openURL/UniversalLink/Shortcut guard active"];
-    } else {
-        [FBPKosherCompatibilityMonitor.shared reportHook:@"LinkBridge.AppDelegate"
-                                                 severity:FBPKosherHookSeverityCritical
-                                                   status:FBPKosherHookStatusMissing
-                                                   detail:@"FBBaseAppDelegate missing"];
+        FBP_ONCE(gLinkBridge) {
+            %init(FBPLinkBridge);
+            [FBPKosherCompatibilityMonitor.shared reportHook:@"LinkBridge.AppDelegate"
+                                                     severity:FBPKosherHookSeverityCritical
+                                                       status:FBPKosherHookStatusInstalled
+                                                       detail:@"AppDelegate openURL/UniversalLink/Shortcut guard active"];
+        }
     }
 }

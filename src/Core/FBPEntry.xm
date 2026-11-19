@@ -70,7 +70,7 @@ static void FBPInstallHooks(void) {
     FBPInitHDRHooks();
     FBPInitPlusHooks();
     FBPInitFontHooks();
-    if (!FBPKosherStrictModeActive()) {
+    if (!FBPEnabled(FBPKeyKosherStrictMode)) {
         FBPInitReelsDownloader();
     }
     FBPInitLinkHooks();
@@ -94,12 +94,10 @@ static void FBPImageDidLoad(const struct mach_header *header, intptr_t slide) {
         // hardcoded, so a re-signed IPA can use a custom identifier (to run
         // alongside the stock app) and still activate.
 
-        // Registers defaults before any hook can read a preference.
+        // Registers defaults before any hook can read a preference. Keep Keychain
+        // and PolicyStore lazy until after dyld constructor completes.
         (void)FBPPrefs.shared;
-        (void)FBPKosherPolicyStore.shared;
         (void)FBPKosherCompatibilityMonitor.shared;
-        (void)FBPKosherPolicyEngine.shared;
-        FBPKosherPurgeMediaCaches();
 
         // Clear the kept log once a day (local midnight), then prime the
         // device-name lookup and open the diagnostic log.
@@ -110,7 +108,6 @@ static void FBPImageDidLoad(const struct mach_header *header, intptr_t slide) {
 
         // Installs what is available now, and again as each framework arrives.
         FBPInstallHooks();
-        [FBPKosherCompatibilityMonitor.shared evaluateStartupHealth];
         _dyld_register_func_for_add_image(&FBPImageDidLoad);
 
         // Returns immediately; the work happens on a utility queue. Outside

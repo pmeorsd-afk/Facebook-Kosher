@@ -125,7 +125,7 @@ static NSDate *gActiveApprovedExpiresAt = nil;
 #pragma mark - Helpers
 
 static NSURL *FBPExtractURLFromController(UIViewController *vc) {
-    if (!vc) return nil;
+    if (!vc || !vc.isViewLoaded) return nil;
     for (NSString *name in @[@"initialNavigationURL", @"currentRequestURL", @"requestURL", @"targetURL", @"url", @"URL"]) {
         SEL sel = NSSelectorFromString(name);
         if (![vc respondsToSelector:sel]) continue;
@@ -142,7 +142,7 @@ static NSURL *FBPExtractURLFromController(UIViewController *vc) {
 }
 
 static NSString *FBPExtractSourceIDFromController(UIViewController *vc) {
-    if (!vc) return nil;
+    if (!vc || !vc.isViewLoaded) return nil;
     for (NSString *name in @[@"groupID", @"pageID", @"profileID", @"targetID", @"fbid"]) {
         SEL sel = NSSelectorFromString(name);
         if (![vc respondsToSelector:sel]) continue;
@@ -195,6 +195,40 @@ static BOOL FBPControllerIsAuthFlow(UIViewController *vc) {
            [low containsString:@"caa"] ||
            [low containsString:@"registration"] ||
            [low containsString:@"accountswitcher"];
+}
+
+static BOOL FBPControllerIsLaunchOrContainer(UIViewController *vc) {
+    if (!vc) return NO;
+    if ([vc isKindOfClass:UINavigationController.class] ||
+        [vc isKindOfClass:UITabBarController.class] ||
+        [vc isKindOfClass:UISplitViewController.class] ||
+        [vc isKindOfClass:UIPageViewController.class]) {
+        return YES;
+    }
+    NSString *low = NSStringFromClass([vc class]).lowercaseString;
+    return [low containsString:@"splash"] ||
+           [low containsString:@"launch"] ||
+           [low containsString:@"root"] ||
+           [low containsString:@"tabbar"] ||
+           [low containsString:@"navigation"] ||
+           [low containsString:@"split"] ||
+           [low containsString:@"container"] ||
+           [low containsString:@"hosting"] ||
+           [low containsString:@"drawer"] ||
+           [low containsString:@"main"] ||
+           [low containsString:@"shell"] ||
+           [low containsString:@"window"];
+}
+
+static BOOL FBPIsExplicitProhibitedDestination(FBPKosherDestinationType dest) {
+    return dest == FBPKosherDestinationReels ||
+           dest == FBPKosherDestinationStories ||
+           dest == FBPKosherDestinationWatch ||
+           dest == FBPKosherDestinationLive ||
+           dest == FBPKosherDestinationPhotoViewer ||
+           dest == FBPKosherDestinationVideoViewer ||
+           dest == FBPKosherDestinationMarketplace ||
+           dest == FBPKosherDestinationSearch;
 }
 
 static BOOL FBPControllerIsSearchSurface(UIViewController *vc) {
@@ -405,7 +439,9 @@ static FBPKosherPolicyResult *FBPEvaluateViewControllerForNavigation(UIViewContr
                        animated:(BOOL)flag
                      completion:(void (^)(void))completion {
     if (!FBPKosherStrictModeActive() || gFBPNavigationGuardReentry ||
-        FBPControllerIsTweakOrSystemSafe(viewControllerToPresent)) {
+        FBPControllerIsTweakOrSystemSafe(viewControllerToPresent) ||
+        FBPControllerIsAuthFlow(viewControllerToPresent) ||
+        FBPControllerIsLaunchOrContainer(viewControllerToPresent)) {
         %orig;
         return;
     }
@@ -428,12 +464,8 @@ static FBPKosherPolicyResult *FBPEvaluateViewControllerForNavigation(UIViewContr
 - (void)viewDidAppear:(BOOL)animated {
     %orig;
     if (!FBPKosherStrictModeActive() || gFBPNavigationGuardReentry) return;
-    if (FBPControllerIsTweakOrSystemSafe(self) || FBPControllerIsAuthFlow(self)) return;
-
-    if (!FBPKosherCompatibilityMonitor.shared.criticalEnforcementHealthy) {
-        if (![FBPKosherNavigationGuard isAuthenticationFlowActive]) {
-            [FBPKosherRestrictedViewController presentFromViewController:self];
-        }
+    if (FBPControllerIsTweakOrSystemSafe(self) || FBPControllerIsAuthFlow(self) ||
+        FBPControllerIsLaunchOrContainer(self)) {
         return;
     }
 
@@ -473,7 +505,9 @@ static FBPKosherPolicyResult *FBPEvaluateViewControllerForNavigation(UIViewContr
 
 - (void)pushViewController:(UIViewController *)viewController animated:(BOOL)animated {
     if (!FBPKosherStrictModeActive() || gFBPNavigationGuardReentry ||
-        FBPControllerIsTweakOrSystemSafe(viewController)) {
+        FBPControllerIsTweakOrSystemSafe(viewController) ||
+        FBPControllerIsAuthFlow(viewController) ||
+        FBPControllerIsLaunchOrContainer(viewController)) {
         %orig;
         return;
     }
@@ -492,19 +526,25 @@ static FBPKosherPolicyResult *FBPEvaluateViewControllerForNavigation(UIViewContr
 }
 
 - (void)setViewControllers:(NSArray<UIViewController *> *)viewControllers animated:(BOOL)animated {
-    if (!FBPKosherStrictModeActive() || gFBPNavigationGuardReentry) {
+    if (!FBPKosherStrictModeActive() || gFBPNavigationGuardReentry || viewControllers.count == 0) {
         %orig;
         return;
     }
     NSMutableArray<UIViewController *> *filtered = [NSMutableArray arrayWithCapacity:viewControllers.count];
     for (UIViewController *vc in viewControllers) {
-        if (FBPControllerIsTweakOrSystemSafe(vc) || FBPEvaluateViewControllerForNavigation(vc).effectiveAllowed) {
+        if (FBPControllerIsTweakOrSystemSafe(vc) ||
+            FBPControllerIsAuthFlow(vc) ||
+            FBPControllerIsLaunchOrContainer(vc)) {
+            [filtered addObject:vc];
+            continue;
+        }
+        FBPKosherPolicyResult *res = FBPEvaluateViewControllerForNavigation(vc);
+        if (res.effectiveAllowed || !FBPIsExplicitProhibitedDestination(res.context.destinationType)) {
             [filtered addObject:vc];
         }
     }
     if (filtered.count == 0) {
         %orig;
-        [FBPKosherHomeController presentAsRootOverlayIfNeeded];
         return;
     }
     %orig(filtered, animated);
@@ -545,38 +585,34 @@ void FBPInitKosherNavigationGuard(void) {
 
     Class vcCls = objc_getClass("UIViewController");
     if (vcCls && [vcCls instancesRespondToSelector:@selector(presentViewController:animated:completion:)]) {
-        FBP_ONCE(gKosherNavVC) { %init(FBPKosherNavigationVC); }
-        [monitor reportHook:@"NavigationGuard.UIViewController"
-                   severity:FBPKosherHookSeverityCritical
-                     status:FBPKosherHookStatusInstalled
-                     detail:@"UIViewController modal & viewDidAppear gate active"];
-    } else {
-        [monitor reportHook:@"NavigationGuard.UIViewController"
-                   severity:FBPKosherHookSeverityCritical
-                     status:FBPKosherHookStatusMissing
-                     detail:@"UIViewController missing"];
+        FBP_ONCE(gKosherNavVC) {
+            %init(FBPKosherNavigationVC);
+            [monitor reportHook:@"NavigationGuard.UIViewController"
+                       severity:FBPKosherHookSeverityCritical
+                         status:FBPKosherHookStatusInstalled
+                         detail:@"UIViewController modal & viewDidAppear gate active"];
+        }
     }
 
     Class navCls = objc_getClass("UINavigationController");
     if (navCls && [navCls instancesRespondToSelector:@selector(pushViewController:animated:)]) {
-        FBP_ONCE(gKosherNavPush) { %init(FBPKosherNavigationNav); }
-        [monitor reportHook:@"NavigationGuard.UINavigationController"
-                   severity:FBPKosherHookSeverityCritical
-                     status:FBPKosherHookStatusInstalled
-                     detail:@"UINavigationController push gate active"];
-    } else {
-        [monitor reportHook:@"NavigationGuard.UINavigationController"
-                   severity:FBPKosherHookSeverityCritical
-                     status:FBPKosherHookStatusMissing
-                     detail:@"UINavigationController missing"];
+        FBP_ONCE(gKosherNavPush) {
+            %init(FBPKosherNavigationNav);
+            [monitor reportHook:@"NavigationGuard.UINavigationController"
+                       severity:FBPKosherHookSeverityCritical
+                         status:FBPKosherHookStatusInstalled
+                         detail:@"UINavigationController push gate active"];
+        }
     }
 
     if (objc_getClass("FBTabBarContainerView")) {
-        FBP_ONCE(gKosherTabTrim) { %init(FBPKosherTabTrim); }
-        [monitor reportHook:@"Chrome.TabBarTrim"
-                   severity:FBPKosherHookSeverityCosmetic
-                     status:FBPKosherHookStatusInstalled
-                     detail:@"FBTabBarContainerView prohibited tabs trimmed"];
+        FBP_ONCE(gKosherTabTrim) {
+            %init(FBPKosherTabTrim);
+            [monitor reportHook:@"Chrome.TabBarTrim"
+                       severity:FBPKosherHookSeverityCosmetic
+                         status:FBPKosherHookStatusInstalled
+                         detail:@"FBTabBarContainerView prohibited tabs trimmed"];
+        }
     }
     if (objc_getClass("FBFloatingTabBar") || objc_getClass("FBNativeTabBar")) {
         FBP_ONCE(gKosherLiquidTabTrim) { %init(FBPKosherLiquidTabTrim); }

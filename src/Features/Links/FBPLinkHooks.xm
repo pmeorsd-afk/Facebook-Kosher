@@ -152,10 +152,12 @@ static BOOL FBPTryOpenExternally(UIViewController *webVC, NSURL *url) {
 
 void FBPInitLinkHooks(void) {
     if (objc_getClass("FBWebViewController")) {
-        FBP_ONCE(gLinks) { %init(FBPLinks); }
-        [FBPKosherCompatibilityMonitor.shared reportHook:@"Links.FBWebViewController"
-                                                 severity:FBPKosherHookSeveritySurface
-                                                   status:FBPKosherHookStatusInstalled
-                                                   detail:@"FBWebViewController link gate active"];
+        FBP_ONCE(gLinks) {
+            %init(FBPLinks);
+            [FBPKosherCompatibilityMonitor.shared reportHook:@"Links.FBWebViewController"
+                                                     severity:FBPKosherHookSeveritySurface
+                                                       status:FBPKosherHookStatusInstalled
+                                                       detail:@"FBWebViewController link gate active"];
+        }
     }
 }

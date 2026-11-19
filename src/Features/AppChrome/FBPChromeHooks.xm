@@ -231,6 +231,8 @@ static UIImageView *FBPFindNavLogo(UIView *root) {
         });
     }
 
+    (void)FBPKosherPolicyStore.shared;
+    (void)FBPKosherPolicyEngine.shared;
     if (FBPKosherStrictModeActive()) {
         FBPKosherPurgeMediaCaches();
     }

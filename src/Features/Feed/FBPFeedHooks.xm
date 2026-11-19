@@ -434,10 +434,6 @@ void FBPInitFeedHooks(void) {
     Class model = objc_getClass("FBMemModelObject");
     if (!model) {
         FBPLog(@"FBMemModelObject not found — feed filtering disabled");
-        [FBPKosherCompatibilityMonitor.shared reportHook:@"FeedFilter.FBMemModelObject"
-                                                 severity:FBPKosherHookSeverityCritical
-                                                   status:FBPKosherHookStatusMissing
-                                                   detail:@"FBMemModelObject not found"];
         return;
     }
 
@@ -454,18 +450,22 @@ void FBPInitFeedHooks(void) {
         }];
     }
 
-    BOOL installed = NO;
     if ([model instancesRespondToSelector:@selector(initWithFBPandoTree:)]) {
-        FBP_ONCE(gFeed) { %init(FBPFeed); }
-        installed = YES;
+        FBP_ONCE(gFeed) {
+            %init(FBPFeed);
+            [FBPKosherCompatibilityMonitor.shared reportHook:@"FeedFilter.FBMemModelObject"
+                                                     severity:FBPKosherHookSeverityCritical
+                                                       status:FBPKosherHookStatusInstalled
+                                                       detail:@"FBMemModelObject Pando filter active"];
+        }
     }
     if ([model instancesRespondToSelector:@selector(initWithFBTree:)]) {
-        FBP_ONCE(gFeedLegacy) { %init(FBPFeedLegacy); }
-        installed = YES;
+        FBP_ONCE(gFeedLegacy) {
+            %init(FBPFeedLegacy);
+            [FBPKosherCompatibilityMonitor.shared reportHook:@"FeedFilter.FBMemModelObject"
+                                                     severity:FBPKosherHookSeverityCritical
+                                                       status:FBPKosherHookStatusInstalled
+                                                       detail:@"FBMemModelObject legacy filter active"];
+        }
     }
-
-    [FBPKosherCompatibilityMonitor.shared reportHook:@"FeedFilter.FBMemModelObject"
-                                             severity:FBPKosherHookSeverityCritical
-                                               status:(installed ? FBPKosherHookStatusInstalled : FBPKosherHookStatusMissing)
-                                               detail:(installed ? @"FBMemModelObject filter active" : @"No Pando/FBTree initialiser found")];
 }

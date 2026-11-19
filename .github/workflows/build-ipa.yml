@@ -89,32 +89,11 @@ jobs:
       - name: Strip PlugIns for ESign without App Groups
         if: ${{ inputs.no_app_groups }}
         run: |
-          python3 - <<'PY'
-          import pathlib, re, tempfile, zipfile, os
-
-          for ipa in sorted(pathlib.Path("packages").glob("*.ipa")):
-              removed = []
-              fd, tmp_name = tempfile.mkstemp(suffix=".ipa", dir=str(ipa.parent))
-              os.close(fd)
-              tmp_path = pathlib.Path(tmp_name)
-              try:
-                  with zipfile.ZipFile(ipa, "r") as zin, zipfile.ZipFile(tmp_path, "w") as zout:
-                      for item in zin.infolist():
-                          if re.match(r"^Payload/[^/]+/PlugIns/", item.filename):
-                              removed.append(item.filename)
-                              continue
-                          data = zin.read(item.filename)
-                          zout.writestr(item, data)
-                  tmp_path.replace(ipa)
-              finally:
-                  if tmp_path.exists():
-                      tmp_path.unlink()
-              print(f"Stripped {len(removed)} PlugIns/ entries from {ipa.name}:")
-              for name in removed[:25]:
-                  print(f"  - {name}")
-              if len(removed) > 25:
-                  print(f"  ... ({len(removed) - 25} more)")
-          PY
+          shopt -s nullglob
+          for ipa in packages/*.ipa; do
+            echo "Stripping PlugIns from $ipa (preserving zip symlinks and permissions)..."
+            zip -d "$ipa" "Payload/*.app/PlugIns/*" || [ $? -eq 12 ]
+          done
 
       - name: Collect build outputs
         id: meta
