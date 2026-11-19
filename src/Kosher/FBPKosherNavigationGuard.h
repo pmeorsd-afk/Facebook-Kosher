@@ -33,6 +33,7 @@ extern void FBPInitKosherNavigationGuard(void);
 + (void)presentBlockedScreenForResult:(FBPKosherPolicyResult *)result
                    fromViewController:(nullable UIViewController *)host;
 
++ (BOOL)isLoggedInChromeMounted;
 + (BOOL)isAuthenticationFlowActive;
 + (void)setReturnPillVisible:(BOOL)visible;
 

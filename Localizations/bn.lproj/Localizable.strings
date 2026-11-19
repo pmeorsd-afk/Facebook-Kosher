@@ -337,6 +337,8 @@
 "kosher.home.emptyAction" = "Tap here to open Admin Setup and approve groups or pages.";
 "kosher.home.emptyTitle" = "No approved groups or pages yet";
 "kosher.home.favorites" = "Favorites";
+"kosher.home.login" = "Sign In to Facebook";
+"kosher.home.loginDesc" = "Open the Facebook login screen, then tap Return to Facebook Kosher";
 "kosher.home.marketplace" = "Marketplace";
 "kosher.home.marketplaceTextOnlyDesc" = "Text-only verified Marketplace";
 "kosher.home.myGroups" = "My Groups";

@@ -321,6 +321,8 @@
 "kosher.home.emptyAction" = "לחץ כאן להגדרה ראשונית ואישור קבוצות או עמודים.";
 "kosher.home.emptyTitle" = "טרם אושרו קבוצות או עמודים";
 "kosher.home.favorites" = "מועדפים";
+"kosher.home.login" = "התחברות לחשבון פייסבוק";
+"kosher.home.loginDesc" = "מעבר זמני למסך ההתחברות וחזרה לפייסבוק כשר";
 "kosher.home.marketplace" = "מרקטפלייס";
 "kosher.home.marketplaceTextOnlyDesc" = "מרקטפלייס מאומת בטקסט בלבד";
 "kosher.home.myGroups" = "הקבוצות שלי";

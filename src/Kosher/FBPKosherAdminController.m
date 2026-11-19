@@ -6,6 +6,8 @@
 #import "FBPKosherCompatibilityMonitor.h"
 #import "FBPKosherDiagnostics.h"
 #import "FBPKosherModeration.h"
+#import "FBPKosherHomeController.h"
+#import "FBPKosherNavigationGuard.h"
 #import "FBPPrefs.h"
 #import "FBPResources.h"
 #import "FBPToast.h"
@@ -80,7 +82,11 @@ typedef NS_ENUM(NSInteger, FBPAdminSection) {
 - (void)closeTapped {
     [FBPKosherPolicyStore.shared lockAdminSession];
     self.session = nil;
-    [self dismissViewControllerAnimated:!FBPEnabled(FBPKeyKosherReducedMotion) completion:nil];
+    [self dismissViewControllerAnimated:!FBPEnabled(FBPKeyKosherReducedMotion) completion:^{
+        if (FBPKosherStrictModeActive() && ![FBPKosherNavigationGuard isAuthenticationFlowActive]) {
+            [FBPKosherHomeController presentAsRootOverlayIfNeeded];
+        }
+    }];
 }
 
 #pragma mark - Lock / Setup Gate UI

@@ -562,6 +562,16 @@ static NSDictionary *FBPPlusModeRow(void) {
 /// sections shown on its own page.
 static NSArray<NSDictionary *> *FBPCategories(void) {
     return @[
+        @{ kRowTitle : FBPL(@"kosher.settings.cat.kosher.title"),
+           kRowDesc : FBPL(@"kosher.settings.cat.kosher.summary"),
+           kRowIcon : @"lock.shield.fill", kRowCategory : @[
+            FBPSection(FBPL(@"kosher.disclaimer.notReligiousCert"), @[
+                FBPActionRow(kActionKosherHome, FBPL(@"kosher.settings.openHome"),
+                             FBPL(@"kosher.settings.openHomeDesc"), @"house.fill", NO),
+                FBPActionRow(kActionKosherAdmin, FBPL(@"kosher.admin.title"),
+                             FBPL(@"kosher.home.adminDesc"), @"lock.shield.fill", NO),
+            ]),
+        ]},
         @{ kRowTitle : FBPL(@"cat.ads.title"), kRowDesc : FBPL(@"cat.ads.summary"),
            kRowIcon : @"ads", kRowCategory : @[
             FBPSection(nil, @[
@@ -924,9 +934,13 @@ static NSUInteger FBPResetPushEncryptionKeys(void) {
     } else if ([action isEqualToString:kActionPlusMode]) {
         [self presentPlusModePicker];
     } else if ([action isEqualToString:kActionKosherHome]) {
-        [self dismissViewControllerAnimated:YES completion:^{
-            [FBPKosherHomeController presentAsRootOverlayIfNeeded];
-        }];
+        if (FBPKosherStrictModeActive()) {
+            [self dismissViewControllerAnimated:YES completion:^{
+                [FBPKosherHomeController presentAsRootOverlayIfNeeded];
+            }];
+        } else {
+            [FBPKosherAdminController presentFromViewController:self];
+        }
     } else if ([action isEqualToString:kActionKosherAdmin]) {
         [FBPKosherAdminController presentFromViewController:self];
     } else if ([action isEqualToString:kActionKosherCompat]) {

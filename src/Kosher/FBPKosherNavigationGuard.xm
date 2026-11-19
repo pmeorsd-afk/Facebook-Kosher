@@ -338,8 +338,31 @@ static FBPKosherPolicyResult *FBPEvaluateViewControllerForNavigation(UIViewContr
     [FBPKosherReturnPillWindow.shared setPillVisible:visible];
 }
 
++ (BOOL)isLoggedInChromeMounted {
+    UIWindow *win = [FBPToastWindow appKeyWindow];
+    if (!win) return NO;
+    NSMutableArray<UIView *> *queue = [NSMutableArray arrayWithObject:win];
+    NSInteger visited = 0;
+    while (queue.count && visited < 250) {
+        UIView *cur = queue.firstObject;
+        [queue removeObjectAtIndex:0];
+        visited++;
+        NSString *cls = NSStringFromClass([cur class]);
+        if (!cur.hidden && cur.alpha > 0.01 &&
+            ([cls isEqualToString:@"FBTabBarContainerView"] ||
+             [cls isEqualToString:@"FBFloatingTabBar"] ||
+             [cls isEqualToString:@"FBNativeTabBar"] ||
+             [cls isEqualToString:@"FBTabBarAndContentView"])) {
+            return YES;
+        }
+        [queue addObjectsFromArray:cur.subviews];
+    }
+    return NO;
+}
+
 + (BOOL)isAuthenticationFlowActive {
-    UIViewController *node = [FBPToastWindow appKeyWindow].rootViewController;
+    UIWindow *win = [FBPToastWindow appKeyWindow];
+    UIViewController *node = win.rootViewController;
     NSMutableArray<UIViewController *> *queue = node ? [NSMutableArray arrayWithObject:node] : [NSMutableArray array];
     NSInteger visited = 0;
     while (queue.count && visited < 80) {
@@ -349,6 +372,27 @@ static FBPKosherPolicyResult *FBPEvaluateViewControllerForNavigation(UIViewContr
         if (FBPControllerIsAuthFlow(cur)) return YES;
         if (cur.presentedViewController) [queue addObject:cur.presentedViewController];
         [queue addObjectsFromArray:cur.childViewControllers];
+    }
+
+    if (!win) return NO;
+    BOOL loggedInChrome = [self isLoggedInChromeMounted];
+    NSMutableArray<UIView *> *viewQueue = [NSMutableArray arrayWithObject:win];
+    NSInteger seen = 0;
+    while (viewQueue.count && seen < 250) {
+        UIView *v = viewQueue.firstObject;
+        [viewQueue removeObjectAtIndex:0];
+        seen++;
+        if (!v.hidden && v.alpha > 0.01 && [v isKindOfClass:UITextField.class]) {
+            UITextField *tf = (UITextField *)v;
+            if (tf.secureTextEntry ||
+                [tf.textContentType isEqualToString:UITextContentTypePassword] ||
+                [tf.textContentType isEqualToString:UITextContentTypeUsername] ||
+                [tf.textContentType isEqualToString:UITextContentTypeOneTimeCode] ||
+                !loggedInChrome) {
+                return YES;
+            }
+        }
+        [viewQueue addObjectsFromArray:v.subviews];
     }
     return NO;
 }

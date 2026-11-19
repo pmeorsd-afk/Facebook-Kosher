@@ -226,6 +226,15 @@ static __weak UIViewController *gActiveRestrictedNav = nil;
     [FBPKosherAdminController presentFromViewController:self];
 }
 
+- (void)loginTapped {
+    if ([FBPKosherNavigationGuard isLoggedInChromeMounted]) {
+        [self reloadSources];
+        return;
+    }
+    [FBPKosherNavigationGuard setReturnPillVisible:YES];
+    [FBPKosherHomeController dismissActiveHomeForApprovedNavigationWithCompletion:nil];
+}
+
 #pragma mark - Table DataSource & Delegate
 
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView {
@@ -246,8 +255,9 @@ static __weak UIViewController *gActiveRestrictedNav = nil;
     if (section == 0) {
         return MAX(1, (NSInteger)self.currentSources.count);
     }
-    BOOL showMarketplace = FBPKosherMarketplaceGuard.isMarketplacePermitted;
-    return showMarketplace ? 4 : 3;
+    NSInteger base = FBPKosherMarketplaceGuard.isMarketplacePermitted ? 4 : 3;
+    BOOL showLogin = ![FBPKosherNavigationGuard isLoggedInChromeMounted];
+    return base + (showLogin ? 1 : 0);
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
@@ -291,8 +301,25 @@ static __weak UIViewController *gActiveRestrictedNav = nil;
         return cell;
     }
 
-    // Section 1: Notifications, Admin Setup, Settings, (optional) Marketplace.
+    // Section 1: Optional Login (only when logged out), Notifications, (optional) Marketplace, Admin Setup, Settings.
+    BOOL showLogin = ![FBPKosherNavigationGuard isLoggedInChromeMounted];
     NSInteger row = indexPath.row;
+    if (showLogin) {
+        if (row == 0) {
+            cell.textLabel.text = FBPL(@"kosher.home.login");
+            cell.detailTextLabel.text = FBPL(@"kosher.home.loginDesc");
+            cell.imageView.image = [UIImage fbp_symbolNamed:@"person.crop.circle.badge.checkmark" size:20];
+            cell.textLabel.font = FBPScaledFont(16, UIFontWeightSemibold, UIFontTextStyleHeadline);
+            cell.textLabel.textColor = UIColor.whiteColor;
+            cell.detailTextLabel.font = FBPScaledFont(13, UIFontWeightRegular, UIFontTextStyleSubheadline);
+            cell.detailTextLabel.textColor = FBPKosherSecondaryTextColor();
+            cell.imageView.tintColor = FBPKosherAccentColor();
+            cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+            return cell;
+        }
+        row -= 1;
+    }
+
     BOOL showMarketplace = FBPKosherMarketplaceGuard.isMarketplacePermitted;
     if (row == 0) {
         cell.textLabel.text = FBPL(@"kosher.home.notifications");
@@ -333,8 +360,17 @@ static __weak UIViewController *gActiveRestrictedNav = nil;
         return;
     }
 
-    BOOL showMarketplace = FBPKosherMarketplaceGuard.isMarketplacePermitted;
+    BOOL showLogin = ![FBPKosherNavigationGuard isLoggedInChromeMounted];
     NSInteger row = indexPath.row;
+    if (showLogin) {
+        if (row == 0) {
+            [self loginTapped];
+            return;
+        }
+        row -= 1;
+    }
+
+    BOOL showMarketplace = FBPKosherMarketplaceGuard.isMarketplacePermitted;
     if (row == 0) {
         [self notificationsTapped];
     } else if (showMarketplace && row == 1) {
