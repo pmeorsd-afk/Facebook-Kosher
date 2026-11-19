@@ -7,6 +7,7 @@
 #import "FBPResources.h"
 #import "FBPToast.h"
 #import "FBPSheet.h"
+#import "FBPKosherPolicyEngine.h"
 
 #import <objc/runtime.h>
 #import <objc/message.h>
@@ -311,6 +312,7 @@ static BOOL FBPCanBuildStoryRow(void) {
 
 /// Whether the mark-as-seen row should be offered in the story menu.
 static BOOL FBPStoryRowWanted(void) {
+    if (FBPKosherStrictModeActive()) return NO;
     return FBPEnabled(FBPKeyAnonymousStories);
 }
 
@@ -382,6 +384,7 @@ static BOOL gStoryRowInstalled = NO;
 static const void *kStoryButtonTargetKey = &kStoryButtonTargetKey;
 
 static void FBPInstallStoryFallbackButton(UIViewController *controller) {
+    if (FBPKosherStrictModeActive()) return;
     if (gStoryRowInstalled) return;
     if (!FBPEnabled(FBPKeyAnonymousStories)) return;
     if (!controller.isViewLoaded) return;
@@ -464,6 +467,8 @@ static void FBPInstallStoryFallbackButton(UIViewController *controller) {
 #pragma mark - Init
 
 void FBPInitStoryHooks(void) {
+    // Stories are blocked entirely in Strict Mode; never expose incognito Story bypasses.
+    if (FBPKosherStrictModeActive()) return;
     Class seenManager = objc_getClass("FBSnacksBucketsSeenStateManager");
     if (seenManager) {
         if ([seenManager instancesRespondToSelector:FBPMarkSeenModernSelector()]) {

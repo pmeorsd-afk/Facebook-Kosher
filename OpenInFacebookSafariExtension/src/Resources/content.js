@@ -51,17 +51,45 @@
     }
   }
 
+  const BLOCKED_PREFIXES = [
+    "/reel",
+    "/reels",
+    "/stories",
+    "/story.php",
+    "/watch",
+    "/video",
+    "/videos",
+    "/live",
+    "/gaming",
+    "/dating",
+    "/photo",
+    "/photos",
+    "/marketplace",
+    "/search"
+  ];
+
+  function isProhibitedKosherPath(url) {
+    try {
+      const path = (url.pathname || "/").toLowerCase();
+      return BLOCKED_PREFIXES.some((prefix) => path === prefix || path.startsWith(prefix + "/"));
+    } catch {
+      return true;
+    }
+  }
+
   function genericFallback() {
     const href = markerURL() || window.location.href;
     return `fb://fbplusbridge?url=${encodeURIComponent(href)}`;
   }
 
   function nativeDestination() {
-    return (
-      fbURLFromMeta('meta[property="al:ios:url"]', "content") ||
-      appArgumentURL() ||
-      genericFallback()
-    );
+    const url = currentURL();
+    // Always route through fbplusbridge so Facebook Kosher's FBPLinkBridge
+    // validates every URL against the administrator allowlist (never bypassing via raw al:ios:url).
+    if (isProhibitedKosherPath(url)) {
+      return `fb://fbplusbridge?url=${encodeURIComponent(window.location.href)}`;
+    }
+    return genericFallback();
   }
 
   function openInApp() {

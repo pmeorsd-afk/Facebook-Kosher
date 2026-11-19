@@ -16,6 +16,11 @@ NS_ASSUME_NONNULL_BEGIN
 - (BOOL)boolForKey:(NSString *)key;
 - (void)setBool:(BOOL)value forKey:(NSString *)key;
 
+/// Admin-authenticated policy writes for protected Kosher enforcement keys.
+/// Ordinary -setBool:forKey: calls cannot disable strict mode or unlock Marketplace.
+- (void)applyAdminStrictMode:(BOOL)strictMode;
+- (void)applyAdminMarketplaceEnabled:(BOOL)enabled;
+
 - (nullable NSString *)stringForKey:(NSString *)key;
 - (void)setString:(nullable NSString *)value forKey:(NSString *)key;
 

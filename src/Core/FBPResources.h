@@ -55,6 +55,26 @@ extern NSString *FBPLocalizedString(NSString *key);
 /// Short alias used at call sites.
 #define FBPL(key) FBPLocalizedString(key)
 
+/// YES when the active in-tweak language is RTL (Hebrew "he" or Arabic "ar").
+extern BOOL FBPIsRTLLanguage(void);
+
+/// Applies RTL or LTR semantic content attribute to tweak-owned views only
+/// (never mutating host app UIView appearance globally).
+extern void FBPApplySemanticDirection(UIView *view);
+
+/// Wraps URLs, numeric IDs, prices, and Latin tokens in Unicode First-Strong /
+/// LRI isolate markers (U+2066 ... U+2069) for clean bidirectional rendering.
+extern NSString *FBPBidiIsolateLTR(NSString *text);
+
+/// Dynamic Type-scaled rounded font respecting FBPKeyKosherLargeText.
+extern UIFont *FBPScaledFont(CGFloat baseSize, UIFontWeight weight, UIFontTextStyle textStyle);
+
+/// High-contrast surface colors for Kosher accessible UI.
+extern UIColor *FBPKosherSurfaceColor(void);
+extern UIColor *FBPKosherCardColor(void);
+extern UIColor *FBPKosherAccentColor(void);
+extern UIColor *FBPKosherSecondaryTextColor(void);
+
 #ifdef __cplusplus
 }
 #endif

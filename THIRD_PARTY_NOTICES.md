@@ -10,3 +10,22 @@ Facebook Plus. Planned work lives separately in **[TODO.md](TODO.md)**.
 - **Symbol Rebinding:** Uses **[fishhook](https://github.com/facebook/fishhook)** for dynamic symbol rebinding.
 
 This project is distributed under the **[GNU General Public License v3.0](LICENSE)**; see the `LICENSE` file for details.
+
+
+---
+
+## Facebook Kosher Derivative Work Notice
+
+**Facebook Kosher** (`פייסבוק כשר`) is a derivative work based on [shajon-dev/Facebook-Plus](https://github.com/shajon-dev/Facebook-Plus), licensed under the **GNU General Public License v3.0 (GPL-3.0)**.
+
+### Preserved Upstream & Third-Party Attributions
+All upstream copyright notices, MIT/BSD/GPL-3.0 attributions, and third-party notices listed above — including `Facebook-Plus` (`S. SHAJON`, `ttlongdl`), `OpenInFacebookSafariExtension`, `MarketplaceAdBlock` (`adamsardo`), `zxPluginsInject`, and `fishhook` — are preserved in full under the GPL-3.0 license terms.
+
+### Summary of Modifications in Facebook Kosher (`facebook-kosher` branch)
+- Added `src/Kosher/` strict-mode policy engine, encrypted Keychain PIN administration, URL/deep-link/navigation guard, text-only media blocking, Marketplace JSON/GraphQL guard, allowlist-only local search, notification guard, runtime compatibility monitor, diagnostics, and accessible Hebrew (`he-IL`, RTL) interfaces.
+- Extended `src/Core/`, `src/Features/`, `src/Settings/`, `FBPNotifyBridge/`, `OpenInFacebookSafariExtension/`, and `Localizations/` (`he.lproj` + synchronized catalogs) to fail closed in Strict Mode.
+
+### Disclaimers
+- Facebook Kosher is an independent, community technical modification and is **not** affiliated with, endorsed by, or sponsored by Meta Platforms, Inc. or Facebook.
+- Facebook Kosher provides technical client-side filtering only and does **not** claim or substitute for halachic, rabbinical, or organizational certification.
+- This repository does **not** include or redistribute Meta's proprietary Facebook iOS IPA, assets, credentials, or signing certificates.

@@ -2,6 +2,7 @@
 #import "FBPHeaders.h"
 #import "FBPPrefs.h"
 #import "FBPResources.h"
+#import "FBPKosherPolicyEngine.h"
 #import "FBPDownloadVariants.h"
 #import "FBPDashDownload.h"
 #import "FBPDownloadStore.h"
@@ -111,6 +112,7 @@ static BOOL FBPStoryControllerVisible(UIViewController *vc) {
 }
 
 static BOOL FBPStoryDownloaderEnabled(void) {
+    if (FBPKosherStrictModeActive()) return NO;
     return [FBPPrefs.shared boolForKey:FBPKeyStoryDownloaderEnabled];
 }
 
@@ -864,6 +866,7 @@ static void FBPStoryDidStartPlayingHook(id self, SEL _cmd, id mediaView, id info
 }
 
 static void FBPInstallStoryDownloader(void) {
+    if (FBPKosherStrictModeActive()) return;
     if (gStoryHookInstalled) return;
 
     Class cls = objc_getClass("FBSnacksBucketViewController");
@@ -892,6 +895,7 @@ static void FBPInstallStoryDownloader(void) {
 
 __attribute__((constructor))
 static void FBPStoryDownloaderCtor(void) {
+    if (FBPKosherStrictModeActive()) return;
     dispatch_async(dispatch_get_main_queue(), ^{
         FBPInstallStoryDownloader();
 

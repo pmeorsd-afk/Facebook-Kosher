@@ -8,6 +8,7 @@
 // declaration lives in FBPResources.h, which pulls in UIKit and would stop this
 // file compiling on a host machine. Keep the signature in step.
 extern NSString *FBPLocalizedString(NSString *key);
+extern BOOL FBPKosherStrictModeActive(void);
 
 #define FBPStoreL(key) FBPLocalizedString(key)
 
@@ -249,7 +250,7 @@ static const NSUInteger kFBPDownloadStoreCapacity = 60;
     job.thumbnailURL = thumbnailURL;
     job.needsMux = needsMux;
     job.needsConversion = needsConversion;
-    job.stage = FBPDownloadJobStageQueued;
+    job.stage = FBPKosherStrictModeActive() ? FBPDownloadJobStageCancelled : FBPDownloadJobStageQueued;
     job.bytesExpected = MAX(0LL, expectedBytes);
     job.createdAt = [NSDate date];
 
@@ -433,7 +434,7 @@ static const NSUInteger kFBPDownloadStoreCapacity = 60;
 }
 
 - (BOOL)retryJob:(FBPDownloadJob *)job {
-    if (!job) return NO;
+    if (!job || FBPKosherStrictModeActive()) return NO;
 
     FBPDownloadJobWork work = nil;
 

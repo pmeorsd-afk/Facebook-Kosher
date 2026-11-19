@@ -18,6 +18,9 @@
 #import "FBPPrefs.h"
 #import "FBPHeaders.h"
 #import "FBPTrace.h"
+#import "FBPKosherPolicyEngine.h"
+#import "FBPKosherMarketplaceGuard.h"
+#import "FBPKosherCompatibilityMonitor.h"
 
 #import <objc/runtime.h>
 
@@ -380,6 +383,9 @@ static NSMutableSet *FBPMarketplaceLiveDelegates(void) {
         NSData *body;
         @synchronized (self) { body = [self.buffer copy]; }
         body = FBPMarketplaceFilterResponse(body, self.name);
+        if (FBPKosherStrictModeActive()) {
+            body = FBPKosherMarketplaceSanitizeResponseData(body, self.name);
+        }
         if (body.length) [self.realDelegate URLRequest:token didReceiveData:body];
     }
     [self.realDelegate URLRequest:token didCompleteWithError:error];
@@ -426,10 +432,15 @@ static NSMutableSet *FBPMarketplaceLiveDelegates(void) {
 
 - (id)handlerForRequest:(NSURLRequest *)request {
     FBPTraceFire("ads.RCTNetworking.handlerForRequest");
-    // Zero overhead and full fidelity when Remove Ads is off.
-    if (!FBPEnabled(FBPKeyNoAds)) return %orig;
+    BOOL strict = FBPKosherStrictModeActive();
+    if (!strict && !FBPEnabled(FBPKeyNoAds)) return %orig;
 
     NSString *name = FBPMarketplaceFriendlyName(request);
+
+    if (strict && FBPKosherMarketplaceShouldBlockRequest(name)) {
+        FBPLog(@"kosher marketplace: blocked %@", name);
+        return [FBPMarketplaceBlockingHandler shared];
+    }
 
     if (FBPMarketplaceIsAdQuery(name)) {
         FBPLog(@"marketplace: blocked %@", name);
@@ -473,5 +484,14 @@ void FBPInitAdsHooks(void) {
     Class networking = objc_getClass("RCTNetworking");
     if (networking && [networking instancesRespondToSelector:@selector(handlerForRequest:)]) {
         FBP_ONCE(gMarketplaceAds) { %init(FBPMarketplaceAds); }
+        [FBPKosherCompatibilityMonitor.shared reportHook:@"Marketplace.RCTNetworking"
+                                                 severity:FBPKosherHookSeveritySurface
+                                                   status:FBPKosherHookStatusInstalled
+                                                   detail:@"RCTNetworking GraphQL guard active (Hermes GYSJ still requires fail-closed until verified)"];
+    } else {
+        [FBPKosherCompatibilityMonitor.shared reportHook:@"Marketplace.RCTNetworking"
+                                                 severity:FBPKosherHookSeveritySurface
+                                                   status:FBPKosherHookStatusPending
+                                                   detail:@"FBReactNativeProductsFramework not yet loaded; Marketplace kept blocked"];
     }
 }

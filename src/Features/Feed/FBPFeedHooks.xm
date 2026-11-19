@@ -9,6 +9,8 @@
 #import "FBPPrefs.h"
 #import "FBPHeaders.h"
 #import "FBPTrace.h"
+#import "FBPKosherContentFilter.h"
+#import "FBPKosherCompatibilityMonitor.h"
 
 #import <objc/message.h>
 #import <os/log.h>
@@ -295,6 +297,8 @@ static void FBPLogFeedUnit(id model) {
 static BOOL FBPShouldFilterModel(id model) {
     if (!model) return NO;
 
+    if (FBPKosherShouldFilterModel(model)) return YES;
+
     if (atomic_load_explicit(&gFBPLogFeedUnits, memory_order_relaxed)) {
         FBPLogFeedUnit(model);
     }
@@ -430,6 +434,10 @@ void FBPInitFeedHooks(void) {
     Class model = objc_getClass("FBMemModelObject");
     if (!model) {
         FBPLog(@"FBMemModelObject not found — feed filtering disabled");
+        [FBPKosherCompatibilityMonitor.shared reportHook:@"FeedFilter.FBMemModelObject"
+                                                 severity:FBPKosherHookSeverityCritical
+                                                   status:FBPKosherHookStatusMissing
+                                                   detail:@"FBMemModelObject not found"];
         return;
     }
 
@@ -446,10 +454,18 @@ void FBPInitFeedHooks(void) {
         }];
     }
 
+    BOOL installed = NO;
     if ([model instancesRespondToSelector:@selector(initWithFBPandoTree:)]) {
         FBP_ONCE(gFeed) { %init(FBPFeed); }
+        installed = YES;
     }
     if ([model instancesRespondToSelector:@selector(initWithFBTree:)]) {
         FBP_ONCE(gFeedLegacy) { %init(FBPFeedLegacy); }
+        installed = YES;
     }
+
+    [FBPKosherCompatibilityMonitor.shared reportHook:@"FeedFilter.FBMemModelObject"
+                                             severity:FBPKosherHookSeverityCritical
+                                               status:(installed ? FBPKosherHookStatusInstalled : FBPKosherHookStatusMissing)
+                                               detail:(installed ? @"FBMemModelObject filter active" : @"No Pando/FBTree initialiser found")];
 }

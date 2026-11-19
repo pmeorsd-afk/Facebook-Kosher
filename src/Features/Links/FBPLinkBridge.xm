@@ -29,6 +29,9 @@
 
 #import "FBPlus.h"
 #import "FBPTrace.h"
+#import "FBPKosherPolicyEngine.h"
+#import "FBPKosherCompatibilityMonitor.h"
+#import "FBPKosherNavigationGuard.h"
 
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
@@ -164,8 +167,26 @@ static BOOL FBPRouteThroughUniversalLink(id delegate, UIApplication *application
             openURL:(NSURL *)url
             options:(NSDictionary *)options {
     FBPTraceFire("linkbridge.FBBaseAppDelegate.openURL");
+
+    if (FBPKosherStrictModeActive()) {
+        FBPKosherPolicyResult *res = [FBPKosherPolicyEngine.shared evaluateURL:url];
+        if (!res.effectiveAllowed) {
+            [FBPKosherNavigationGuard presentBlockedScreenForResult:res fromViewController:nil];
+            return YES;
+        }
+    }
+
     NSURL *targetURL = FBPBridgeTargetURL(url);
-    if (!targetURL) return %orig;
+    if (!targetURL) {
+        if (FBPKosherStrictModeActive() && url) {
+            [FBPKosherNavigationGuard authorizeDestinationURLTemporarily:url];
+        }
+        return %orig;
+    }
+
+    if (FBPKosherStrictModeActive()) {
+        [FBPKosherNavigationGuard authorizeDestinationURLTemporarily:targetURL];
+    }
 
     // `self` is typed as the forward-declared FBBaseAppDelegate here, so route
     // the dynamic call through an untyped id.
@@ -178,16 +199,48 @@ static BOOL FBPRouteThroughUniversalLink(id delegate, UIApplication *application
     continueUserActivity:(NSUserActivity *)userActivity
       restorationHandler:(id)restorationHandler {
     FBPTraceFire("linkbridge.FBBaseAppDelegate.continueUserActivity");
-    // A real Universal Link (e.g. Messenger opening m.facebook.com). Rewrite the
-    // host to the canonical www form before the app routes it, so mobile/web
-    // host variants do not degrade to Home. Non-Facebook activities untouched.
+
     if ([userActivity.activityType isEqualToString:NSUserActivityTypeBrowsingWeb]) {
+        if (FBPKosherStrictModeActive()) {
+            FBPKosherPolicyResult *res =
+                [FBPKosherPolicyEngine.shared evaluateURL:userActivity.webpageURL];
+            if (!res.effectiveAllowed) {
+                [FBPKosherNavigationGuard presentBlockedScreenForResult:res fromViewController:nil];
+                return YES;
+            }
+        }
         NSURL *canonical = FBPCanonicalFacebookURL(userActivity.webpageURL);
         if (canonical && ![canonical isEqual:userActivity.webpageURL]) {
             userActivity.webpageURL = canonical;
         }
+        if (FBPKosherStrictModeActive() && userActivity.webpageURL) {
+            [FBPKosherNavigationGuard authorizeDestinationURLTemporarily:userActivity.webpageURL];
+        }
+    } else if (FBPKosherStrictModeActive()) {
+        // Non-web restored activities in Strict Mode cannot jump into unverified entertainment feeds.
+        FBPKosherPolicyResult *res = [FBPKosherPolicyEngine.shared evaluateURL:userActivity.webpageURL];
+        if (!res.effectiveAllowed) {
+            [FBPKosherNavigationGuard presentBlockedScreenForResult:res fromViewController:nil];
+            return YES;
+        }
     }
     return %orig;
+}
+
+- (void)application:(UIApplication *)application
+performActionForShortcutItem:(UIApplicationShortcutItem *)shortcutItem
+  completionHandler:(void (^)(BOOL succeeded))completionHandler {
+    if (FBPKosherStrictModeActive()) {
+        id rawURL = shortcutItem.userInfo[@"url"] ?: shortcutItem.userInfo[@"href"];
+        NSURL *u = [rawURL isKindOfClass:NSString.class] ? [NSURL URLWithString:rawURL] : nil;
+        FBPKosherPolicyResult *res = [FBPKosherPolicyEngine.shared evaluateURL:u];
+        if (!res.effectiveAllowed) {
+            [FBPKosherNavigationGuard presentBlockedScreenForResult:res fromViewController:nil];
+            if (completionHandler) completionHandler(NO);
+            return;
+        }
+    }
+    %orig;
 }
 
 %end
@@ -195,7 +248,18 @@ static BOOL FBPRouteThroughUniversalLink(id delegate, UIApplication *application
 %end // FBPLinkBridge
 
 void FBPInitLinkBridge(void) {
-    if (objc_getClass("FBBaseAppDelegate")) {
+    Class appDelegate = objc_getClass("FBBaseAppDelegate");
+    if (appDelegate &&
+        [appDelegate instancesRespondToSelector:@selector(application:openURL:options:)]) {
         FBP_ONCE(gLinkBridge) { %init(FBPLinkBridge); }
+        [FBPKosherCompatibilityMonitor.shared reportHook:@"LinkBridge.AppDelegate"
+                                                 severity:FBPKosherHookSeverityCritical
+                                                   status:FBPKosherHookStatusInstalled
+                                                   detail:@"AppDelegate openURL/UniversalLink/Shortcut guard active"];
+    } else {
+        [FBPKosherCompatibilityMonitor.shared reportHook:@"LinkBridge.AppDelegate"
+                                                 severity:FBPKosherHookSeverityCritical
+                                                   status:FBPKosherHookStatusMissing
+                                                   detail:@"FBBaseAppDelegate missing"];
     }
 }

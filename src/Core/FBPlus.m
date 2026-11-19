@@ -20,6 +20,8 @@ NSNotificationName const FBPSettingsDidChangeNotification =
 NSNotificationName const FBPTabBarVisibilityDidChangeNotification =
     @"FBPlusTabBarVisibilityDidChangeNotification";
 NSString *const FBPTabBarFractionKey = @"fraction";
+NSNotificationName const FBPKosherPolicyDidChangeNotification =
+    @"FBKosherPolicyDidChangeNotification";
 NSString *const FBPKeyNoAds            = @"noAds";
 NSString *const FBPKeyNoRecs           = @"noRecs";
 NSString *const FBPKeyNoPYMK           = @"noPYMK";
@@ -61,6 +63,13 @@ NSString *const FBPKeyLanguage         = @"uiLanguage";
 NSString *const FBPKeyIntroduced       = @"introduced";
 NSString *const FBPKeyLastNotifiedVersion = @"lastNotifiedVersion";
 NSString *const FBPKeyResolvedGitHubOwner = @"resolvedGitHubOwner";
+NSString *const FBPKeyKosherStrictMode           = @"kosherStrictMode";
+NSString *const FBPKeyKosherMarketplaceEnabled   = @"kosherMarketplaceEnabled";
+NSString *const FBPKeyKosherHighContrast         = @"kosherHighContrast";
+NSString *const FBPKeyKosherLargeText            = @"kosherLargeText";
+NSString *const FBPKeyKosherReducedMotion        = @"kosherReducedMotion";
+NSString *const FBPKeyKosherSafeNotificationsOnly = @"kosherSafeNotificationsOnly";
+NSString *const FBPKeyKosherLocalTextModeration  = @"kosherLocalTextModeration";
 NSString *const FBPAXFeedLikeButton    = @"cell-ufi-like-button";
 NSString *const FBPAXReelsLikeButton   = @"shorts-like-top-button";
 NSString *const FBPAXNavSettingsButton = @"nav-settings-button";

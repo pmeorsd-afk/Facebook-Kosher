@@ -2,6 +2,7 @@
 #import "FBPHeaders.h"
 #import "FBPPrefs.h"
 #import "FBPResources.h"
+#import "FBPKosherPolicyEngine.h"
 #import "FBPDownloadVariants.h"
 #import "FBPDashDownload.h"
 #import "FBPDownloadStore.h"
@@ -2268,6 +2269,8 @@ FBPInstallHitTestHook(void) {
 }
 
 void FBPInitReelsDownloader(void) {
+    if (FBPKosherStrictModeActive()) return;
+
     // Seed the quality diagnostic's cached flag and keep it in step with the
     // settings panel. Both download surfaces share it, and this installer is the
     // one FBPEntry always runs, so it is registered here; it is re-run on every

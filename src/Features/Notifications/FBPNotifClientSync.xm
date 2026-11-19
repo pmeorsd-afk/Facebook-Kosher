@@ -40,6 +40,7 @@
 #import "FBPPrefs.h"
 #import "FBPTrace.h"
 #import "Header.h"
+#import "FBPKosherNotificationGuard.h"
 
 @interface FBPClientSyncTrigger: NSObject
 - (instancetype)initWithName:(NSString *)name withDelay:(NSInteger)delay andExtra:(NSString *)extra;
@@ -332,6 +333,10 @@ static BOOL fbpIsBadgeUpdatePush(NSDictionary *userInfo) {
 
 - (void)evaluatePush:(id)push {
 	FBPTraceFire("notif.FBPushNotifClientSyncManager.evaluatePush");
+	if (!FBPKosherShouldAllowPushEvaluate(push)) {
+		FBPDiagLog(@"kosher client sync: blocked prohibited push before display");
+		return;
+	}
 	FBPDiagLog(@"client sync: evaluating a fetched push");
 	%orig;
 }

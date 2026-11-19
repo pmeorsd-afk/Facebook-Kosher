@@ -125,12 +125,37 @@ static NSDictionary<NSString *, NSString *> *FBPStringsForLanguage(NSString *lan
 NSString *FBPLocalizedString(NSString *key) {
     if (key.length == 0) return key;
     NSString *language = [FBPPrefs.shared stringForKey:FBPKeyLanguage];
+    if (!language) language = @"he";
 
     NSString *value = FBPStringsForLanguage(language)[key];
     if (value) return value;
 
     value = FBPStringsForLanguage(@"Base")[key];
     return value ?: key;
+}
+
+BOOL FBPIsRTLLanguage(void) {
+    NSString *language = [FBPPrefs.shared stringForKey:FBPKeyLanguage];
+    if (!language) return YES;
+    return [language isEqualToString:@"he"] || [language isEqualToString:@"ar"];
+}
+
+void FBPApplySemanticDirection(UIView *view) {
+    if (!view) return;
+    UISemanticContentAttribute attr = FBPIsRTLLanguage()
+        ? UISemanticContentAttributeForceRightToLeft
+        : UISemanticContentAttributeForceLeftToRight;
+    view.semanticContentAttribute = attr;
+    if ([view isKindOfClass:UITextField.class]) {
+        ((UITextField *)view).textAlignment = FBPIsRTLLanguage() ? NSTextAlignmentRight : NSTextAlignmentLeft;
+    } else if ([view isKindOfClass:UITextView.class]) {
+        ((UITextView *)view).textAlignment = FBPIsRTLLanguage() ? NSTextAlignmentRight : NSTextAlignmentLeft;
+    }
+}
+
+NSString *FBPBidiIsolateLTR(NSString *text) {
+    if (text.length == 0) return text ?: @"";
+    return [NSString stringWithFormat:@"\u2066%@\u2069", text];
 }
 
 UIFont *FBPFont(CGFloat size, UIFontWeight weight) {
@@ -141,4 +166,36 @@ UIFont *FBPFont(CGFloat size, UIFontWeight weight) {
         if (rounded) return [UIFont fontWithDescriptor:rounded size:size];
     }
     return base;
+}
+
+UIFont *FBPScaledFont(CGFloat baseSize, UIFontWeight weight, UIFontTextStyle textStyle) {
+    CGFloat multiplier = FBPEnabled(FBPKeyKosherLargeText) ? 1.20 : 1.0;
+    UIFont *base = FBPFont(baseSize * multiplier, weight);
+    UIFontMetrics *metrics = [UIFontMetrics metricsForTextStyle:textStyle ?: UIFontTextStyleBody];
+    return [metrics scaledFontForFont:base];
+}
+
+UIColor *FBPKosherSurfaceColor(void) {
+    return FBPPanelColor();
+}
+
+UIColor *FBPKosherCardColor(void) {
+    if (FBPEnabled(FBPKeyKosherHighContrast)) {
+        return [UIColor colorWithRed:18.0/255.0 green:18.0/255.0 blue:22.0/255.0 alpha:1.0];
+    }
+    return FBPCardColor();
+}
+
+UIColor *FBPKosherAccentColor(void) {
+    if (FBPEnabled(FBPKeyKosherHighContrast)) {
+        return [UIColor colorWithRed:0.35 green:0.78 blue:1.0 alpha:1.0];
+    }
+    return FBPTintColor();
+}
+
+UIColor *FBPKosherSecondaryTextColor(void) {
+    if (FBPEnabled(FBPKeyKosherHighContrast)) {
+        return [UIColor colorWithWhite:0.90 alpha:1.0];
+    }
+    return UIColor.secondaryLabelColor;
 }

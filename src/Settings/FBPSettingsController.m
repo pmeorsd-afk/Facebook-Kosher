@@ -21,6 +21,11 @@
 #import "FBPWelcomeController.h"
 #import "FBPUpdateChecker.h"
 #import "FBPTrace.h"
+#import "FBPKosherPolicyEngine.h"
+#import "FBPKosherHomeController.h"
+#import "FBPKosherAdminController.h"
+#import "FBPKosherCompatibilityMonitor.h"
+#import "FBPKosherDiagnostics.h"
 
 #import <objc/runtime.h>
 #import <Security/Security.h>
@@ -71,6 +76,9 @@ static NSString *const kActionResetPush  = @"resetPushKeys";
 static NSString *const kActionLogExport  = @"logExport";
 static NSString *const kActionLogClear   = @"logClear";
 static NSString *const kActionPlusMode   = @"plusMode";
+static NSString *const kActionKosherHome = @"kosherHome";
+static NSString *const kActionKosherAdmin = @"kosherAdmin";
+static NSString *const kActionKosherCompat = @"kosherCompat";
 
 static NSString *const kCellIdentifier = @"fbp.settings.row";
 static NSString *const kTelegramURL    = @"https://t.me/ReFacebookPlus";
@@ -218,6 +226,8 @@ static UIImage *FBPSettingsIcon(NSString *name) {
     self.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
     self.view.backgroundColor = FBPPanelColor();
     self.view.tintColor = FBPTintColor();
+    FBPApplySemanticDirection(self.view);
+    FBPApplySemanticDirection(self.tableView);
 
     // In a UITableViewController self.view *is* the table, so the panel colour has
     // to live on the table itself — setting it clear let the cards show for a
@@ -351,10 +361,16 @@ static UIImage *FBPSettingsIcon(NSString *name) {
                            [row[kRowKey] isEqualToString:kActionFonts] ||
                            [row[kRowKey] isEqualToString:kActionLanguage] ||
                            [row[kRowKey] isEqualToString:kActionDownloads] ||
-                           [row[kRowKey] isEqualToString:kActionWelcome];
+                           [row[kRowKey] isEqualToString:kActionWelcome] ||
+                           [row[kRowKey] isEqualToString:kActionKosherHome] ||
+                           [row[kRowKey] isEqualToString:kActionKosherAdmin] ||
+                           [row[kRowKey] isEqualToString:kActionKosherCompat];
         if (showChevron) {
+            NSString *chevronName = isPicker
+                ? @"chevron.up.chevron.down"
+                : (FBPIsRTLLanguage() ? @"chevron.left" : @"chevron.right");
             UIImageView *chevron = [[UIImageView alloc] initWithImage:
-                [UIImage fbp_symbolNamed:(isPicker ? @"chevron.up.chevron.down" : @"chevron.right")
+                [UIImage fbp_symbolNamed:chevronName
                                     size:13 weight:UIImageSymbolWeightSemibold]];
             chevron.tintColor = UIColor.tertiaryLabelColor;
             [pieces addObject:chevron];
@@ -669,6 +685,91 @@ static NSArray<NSDictionary *> *FBPCategories(void) {
     ];
 }
 
+/// Strict Mode safe categories: completely removes Downloads, Stories incognito,
+/// Facebook Plus entitlement override, unrestricted Safari links, and feed un-blocking toggles.
+static NSArray<NSDictionary *> *FBPCategoriesKosher(void) {
+    return @[
+        @{ kRowTitle : FBPL(@"kosher.settings.cat.kosher.title"),
+           kRowDesc : FBPL(@"kosher.settings.cat.kosher.summary"),
+           kRowIcon : @"lock.shield.fill", kRowCategory : @[
+            FBPSection(FBPL(@"kosher.disclaimer.notReligiousCert"), @[
+                FBPActionRow(kActionKosherHome, FBPL(@"kosher.settings.openHome"),
+                             FBPL(@"kosher.settings.openHomeDesc"), @"house.fill", NO),
+                FBPActionRow(kActionKosherAdmin, FBPL(@"kosher.admin.title"),
+                             FBPL(@"kosher.home.adminDesc"), @"lock.shield.fill", NO),
+            ]),
+        ]},
+        @{ kRowTitle : FBPL(@"cat.confirm.title"), kRowDesc : FBPL(@"cat.confirm.summary"),
+           kRowIcon : @"alert", kRowCategory : @[
+            FBPSection(FBPL(@"footer.confirm"), @[
+                FBPSwitchRow(FBPKeyFeedLike, FBPL(@"row.feedlike.title"), FBPL(@"row.feedlike.desc"), @"alert"),
+                FBPSwitchRow(FBPKeyConfirmComment, FBPL(@"row.confirmcomment.title"), FBPL(@"row.confirmcomment.desc"), @"alert"),
+                FBPSwitchRow(FBPKeyConfirmShare, FBPL(@"row.confirmshare.title"), FBPL(@"row.confirmshare.desc"), @"alert"),
+                FBPSwitchRow(FBPKeyConfirmPost, FBPL(@"row.confirmpost.title"), FBPL(@"row.confirmpost.desc"), @"alert"),
+                FBPSwitchRow(FBPKeyConfirmFriend, FBPL(@"row.confirmfriend.title"), FBPL(@"row.confirmfriend.desc"), @"people"),
+                FBPSwitchRow(FBPKeyConfirmFollow, FBPL(@"row.confirmfollow.title"), FBPL(@"row.confirmfollow.desc"), @"group"),
+            ]),
+        ]},
+        @{ kRowTitle : FBPL(@"cat.appearance.title"),
+           kRowDesc : FBPL(@"kosher.settings.cat.appearance.summary"),
+           kRowIcon : @"magic", kRowCategory : @[
+            FBPSection(FBPL(@"row.oled.desc"), @[
+                FBPSwitchRow(FBPKeyOLED, FBPL(@"row.oled.title"), nil, @"moon.fill"),
+                FBPSwitchRow(FBPKeyOLEDDividers, FBPL(@"row.oleddividers.title"), FBPL(@"row.oleddividers.desc"), @"rectangle.split.1x2"),
+                FBPSwitchRow(FBPKeyDisableHDR, FBPL(@"row.disablehdr.title"), FBPL(@"row.disablehdr.desc"), @"sun.max"),
+            ]),
+            FBPSection(nil, @[
+                FBPSwitchRow(FBPKeyKosherHighContrast, FBPL(@"kosher.a11y.highContrast"), nil, @"circle.lefthalf.filled"),
+                FBPSwitchRow(FBPKeyKosherLargeText, FBPL(@"kosher.a11y.largeText"), nil, @"textformat.size"),
+                FBPSwitchRow(FBPKeyKosherReducedMotion, FBPL(@"kosher.a11y.reducedMotion"), nil, @"figure.walk"),
+            ]),
+            FBPSection(nil, @[
+                FBPActionRow(kActionAppIcon, FBPL(@"row.appicon.title"), FBPL(@"row.appicon.desc"), @"app.badge.fill", NO),
+                FBPActionRow(kActionFonts, FBPL(@"row.fonts.title"), FBPL(@"row.fonts.desc"), @"textformat", NO),
+            ]),
+        ]},
+        @{ kRowTitle : FBPL(@"cat.general.title"),
+           kRowDesc : FBPL(@"kosher.settings.cat.general.summary"),
+           kRowIcon : @"setting", kRowCategory : @[
+            FBPSection(nil, @[
+                FBPActionRow(kActionLanguage, FBPL(@"row.language.title"), nil, @"globe", NO),
+                FBPSwitchRow(FBPKeyAutoClearCache, FBPL(@"row.autoclear.title"), nil, @"arrow.triangle.2.circlepath"),
+                FBPActionRow(kActionClearCache, FBPL(@"row.clearcache.title"), nil, @"trash.fill", NO),
+            ]),
+            FBPSection(FBPL(@"footer.resetpushkeys"), @[
+                FBPSwitchRow(FBPKeyKeychainRebind, FBPL(@"row.keychainrebind.title"), FBPL(@"row.keychainrebind.desc"), @"key.fill"),
+                FBPSwitchRow(FBPKeyNotifClientSync, FBPL(@"row.notifclientsync.title"),
+                             FBPL(@"row.notifclientsync.desc"), @"bell.badge.fill"),
+                FBPActionRow(kActionResetPush, FBPL(@"row.resetpushkeys.title"),
+                             FBPL(@"row.resetpushkeys.desc"), @"bell.badge.fill", YES),
+            ]),
+            FBPSection(nil, @[
+                FBPActionRow(kActionWelcome, FBPL(@"row.welcome.title"), nil, @"hand.wave.fill", NO),
+                FBPActionRow(kActionReset, FBPL(@"row.reset.title"), nil, @"arrow.counterclockwise", YES),
+            ]),
+        ]},
+        @{ kRowTitle : FBPL(@"cat.logs.title"),
+           kRowDesc : FBPL(@"kosher.admin.sec.diagnostics"),
+           kRowIcon : @"ladybug.fill", kRowCategory : @[
+            FBPSection(nil, @[
+                FBPActionRow(kActionKosherCompat, FBPL(@"kosher.admin.viewCompatReport"),
+                             nil, @"checkmark.shield.fill", NO),
+                FBPInfoRow(FBPL(@"logs.recordedlines"),
+                           [NSString stringWithFormat:@"%lu", (unsigned long)FBPLogLineCount()],
+                           @"doc.text", nil),
+                FBPSwitchRow(FBPKeyLogsKeep, FBPL(@"row.logskeep.title"),
+                             FBPL(@"row.logskeep.desc"), @"tray.and.arrow.down.fill"),
+            ]),
+            FBPSection(nil, @[
+                FBPActionRow(kActionLogExport, FBPL(@"row.logexport.title"),
+                             FBPL(@"row.logexport.desc"), @"square.and.arrow.up", NO),
+                FBPActionRow(kActionLogClear, FBPL(@"row.logclear.title"),
+                             FBPL(@"row.logclear.desc"), @"trash.fill", NO),
+            ]),
+        ]},
+    ];
+}
+
 #pragma mark - Category detail page
 
 @interface FBPSettingsDetailController : FBPTableController
@@ -822,6 +923,22 @@ static NSUInteger FBPResetPushEncryptionKeys(void) {
         [FBPToastManager.shared showMessage:FBPL(@"toast.logCleared") success:YES];
     } else if ([action isEqualToString:kActionPlusMode]) {
         [self presentPlusModePicker];
+    } else if ([action isEqualToString:kActionKosherHome]) {
+        [self dismissViewControllerAnimated:YES completion:^{
+            [FBPKosherHomeController presentAsRootOverlayIfNeeded];
+        }];
+    } else if ([action isEqualToString:kActionKosherAdmin]) {
+        [FBPKosherAdminController presentFromViewController:self];
+    } else if ([action isEqualToString:kActionKosherCompat]) {
+        NSString *report = FBPKosherCompatibilityMonitor.shared.formattedHebrewDiagnosticsReport;
+        UIAlertController *alert =
+            [UIAlertController alertControllerWithTitle:FBPL(@"kosher.admin.viewCompatReport")
+                                                message:report
+                                         preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:FBPL(@"common.ok")
+                                                  style:UIAlertActionStyleDefault
+                                                handler:nil]];
+        [self presentViewController:alert animated:YES completion:nil];
     }
 }
 
@@ -860,7 +977,8 @@ static NSUInteger FBPResetPushEncryptionKeys(void) {
 // values like the recorded-line count are recomputed) and reloads the table.
 - (void)reloadCurrentCategory {
     NSString *icon = _category[kRowIcon];
-    for (NSDictionary *category in FBPCategories()) {
+    NSArray<NSDictionary *> *cats = FBPKosherStrictModeActive() ? FBPCategoriesKosher() : FBPCategories();
+    for (NSDictionary *category in cats) {
         if ([category[kRowIcon] isEqualToString:icon]) {
             _category = category;
             _sections = category[kRowCategory];
@@ -874,7 +992,8 @@ static NSUInteger FBPResetPushEncryptionKeys(void) {
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
     NSString *icon = _category[kRowIcon];
-    for (NSDictionary *category in FBPCategories()) {
+    NSArray<NSDictionary *> *cats = FBPKosherStrictModeActive() ? FBPCategoriesKosher() : FBPCategories();
+    for (NSDictionary *category in cats) {
         if ([category[kRowIcon] isEqualToString:icon]) {
             _category = category;
             _sections = category[kRowCategory];
@@ -882,6 +1001,8 @@ static NSUInteger FBPResetPushEncryptionKeys(void) {
         }
     }
     self.title = _category[kRowTitle];
+    FBPApplySemanticDirection(self.view);
+    FBPApplySemanticDirection(self.tableView);
     [self.tableView reloadData];
 }
 
@@ -955,9 +1076,10 @@ static NSUInteger FBPResetPushEncryptionKeys(void) {
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.title = FBPL(@"nav.settings");
+    self.title = FBPKosherStrictModeActive() ? FBPL(@"kosher.home.title") : FBPL(@"nav.settings");
+    NSString *closeIcon = FBPIsRTLLanguage() ? @"chevron.right" : @"chevron.left";
     self.navigationItem.leftBarButtonItem =
-        [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"chevron.left"]
+        [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:closeIcon]
                                          style:UIBarButtonItemStylePlain
                                         target:self action:@selector(dismissSettings)];
     self.navigationItem.leftBarButtonItem.tintColor = FBPTintColor();
@@ -966,12 +1088,16 @@ static NSUInteger FBPResetPushEncryptionKeys(void) {
 
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
+    self.title = FBPKosherStrictModeActive() ? FBPL(@"kosher.home.title") : FBPL(@"nav.settings");
+    FBPApplySemanticDirection(self.view);
+    FBPApplySemanticDirection(self.tableView);
     [self rebuild];
     [self.tableView reloadData];
 }
 
 - (void)rebuild {
-    _categories = FBPCategories();
+    BOOL strict = FBPKosherStrictModeActive();
+    _categories = strict ? FBPCategoriesKosher() : FBPCategories();
 
     NSMutableArray *categoryRows = [NSMutableArray array];
     for (NSDictionary *category in _categories) {
@@ -996,11 +1122,16 @@ static NSUInteger FBPResetPushEncryptionKeys(void) {
                            UIDevice.currentDevice.systemName,
                            UIDevice.currentDevice.systemVersion];
 
-    _sections = @[
-        categoryRows,
-        // One about card: who made it, where to reach it, and the versions and
-        // device a bug report needs.
-        @[
+    NSArray *aboutRows = strict
+        ? @[
+            FBPInfoRow(FBPL(@"kosher.about.product"), FBPL(@"kosher.home.title"), @"logo", nil),
+            FBPInfoRow(FBPL(@"info.developer"), @"S. SHAJON (Facebook-Plus GPL-3.0)", @"people", nil),
+            FBPInfoRow(FBPL(@"info.fbPlusVersion"), plusVersion, @"logo", nil),
+            FBPInfoRow(FBPL(@"info.fbVersion"), fbVersion, @"facebook", nil),
+            FBPInfoRow(FBPL(@"info.iosVersion"), osVersion, @"gear", nil),
+            FBPInfoRow(FBPL(@"info.deviceName"), FBPDeviceDisplayName(), @"iphone", nil),
+        ]
+        : @[
             FBPInfoRow(FBPL(@"info.developer"), @"S. SHAJON", @"people", nil),
             FBPInfoRow(FBPL(@"info.github"), [FBPUpdateChecker activeGitHubOwner], @"github",
                        [FBPUpdateChecker githubRepoURL]),
@@ -1009,7 +1140,11 @@ static NSUInteger FBPResetPushEncryptionKeys(void) {
             FBPInfoRow(FBPL(@"info.fbVersion"), fbVersion, @"facebook", nil),
             FBPInfoRow(FBPL(@"info.iosVersion"), osVersion, @"gear", nil),
             FBPInfoRow(FBPL(@"info.deviceName"), FBPDeviceDisplayName(), @"iphone", nil),
-        ],
+        ];
+
+    _sections = @[
+        categoryRows,
+        aboutRows,
         // Several options only take effect on a fresh launch, so this sits right
         // under the info cards as the one-tap way to force-close the app.
         @[
@@ -1049,7 +1184,10 @@ static NSUInteger FBPResetPushEncryptionKeys(void) {
     NSString *link = row[kRowLink];
     if (link.length) {
         NSURL *url = [NSURL URLWithString:link];
-        if (url) [UIApplication.sharedApplication openURL:url options:@{} completionHandler:nil];
+        if (url && (!FBPKosherStrictModeActive() ||
+                    [FBPKosherPolicyEngine.shared evaluateURL:url].effectiveAllowed)) {
+            [UIApplication.sharedApplication openURL:url options:@{} completionHandler:nil];
+        }
     }
 }
 
@@ -1082,6 +1220,7 @@ static NSUInteger FBPResetPushEncryptionKeys(void) {
         [[UINavigationController alloc] initWithRootViewController:menu];
     navigation.modalPresentationStyle = UIModalPresentationFullScreen;
     navigation.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+    FBPApplySemanticDirection(navigation.view);
     // Paint the container black up front so the panel slides in already-dark —
     // otherwise the cards appear a frame before the background fills in.
     navigation.view.backgroundColor = FBPPanelColor();

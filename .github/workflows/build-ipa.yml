@@ -1,11 +1,10 @@
-name: Build Facebook Plus (.ipa)
+name: Build Facebook Kosher (.ipa)
 
-# Build a sideloadable Facebook Plus IPA from a decrypted Facebook IPA you supply.
+# Build a sideloadable Facebook Kosher IPA from a decrypted Facebook IPA you supply.
 #
 # We ship no decrypted Facebook IPA (we cannot, for legal reasons), so you provide
 # a direct download URL to your own. The workflow builds the tweak from source
-# (Theos), then reuses build.py to inject it — together with the custom app-icons
-# and the "Open in Facebook" Safari extension — into your IPA with cyan and
+# (Theos), then reuses build.py to inject it into your IPA with cyan and
 # publishes the result as a draft release.
 
 on:
@@ -22,6 +21,12 @@ on:
         default: ""
         required: false
         type: string
+
+      no_app_groups:
+        description: "Strip PlugIns/NSE for ESign signing without App Groups (recommended)"
+        default: true
+        required: false
+        type: boolean
 
 # Only one injection run per branch at a time; a newer run cancels the older one.
 concurrency:
@@ -76,9 +81,40 @@ jobs:
           # cyan (-b) rewrites the app's bundle id. The tweak is bundle-id-agnostic
           # (see FBPEntry.xm), so it activates whatever id you choose here.
           BUNDLE_ID: ${{ inputs.bundle_id }}
+          NSE_BRIDGE: ${{ inputs.no_app_groups && '0' || '1' }}
         # --all builds both packaging schemes (rootless + rootfull) for the
         # release; --ipa injects the rootless build into the downloaded IPA.
         run: python3 build.py --all --ipa
+
+      - name: Strip PlugIns for ESign without App Groups
+        if: ${{ inputs.no_app_groups }}
+        run: |
+          python3 - <<'PY'
+          import pathlib, re, tempfile, zipfile, os
+
+          for ipa in sorted(pathlib.Path("packages").glob("*.ipa")):
+              removed = []
+              fd, tmp_name = tempfile.mkstemp(suffix=".ipa", dir=str(ipa.parent))
+              os.close(fd)
+              tmp_path = pathlib.Path(tmp_name)
+              try:
+                  with zipfile.ZipFile(ipa, "r") as zin, zipfile.ZipFile(tmp_path, "w") as zout:
+                      for item in zin.infolist():
+                          if re.match(r"^Payload/[^/]+/PlugIns/", item.filename):
+                              removed.append(item.filename)
+                              continue
+                          data = zin.read(item.filename)
+                          zout.writestr(item, data)
+                  tmp_path.replace(ipa)
+              finally:
+                  if tmp_path.exists():
+                      tmp_path.unlink()
+              print(f"Stripped {len(removed)} PlugIns/ entries from {ipa.name}:")
+              for name in removed[:25]:
+                  print(f"  - {name}")
+              if len(removed) > 25:
+                  print(f"  ... ({len(removed) - 25} more)")
+          PY
 
       - name: Collect build outputs
         id: meta

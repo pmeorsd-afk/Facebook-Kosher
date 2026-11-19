@@ -14,6 +14,9 @@
 #import "FBPPrefs.h"
 #import "FBPHeaders.h"
 #import "FBPTrace.h"
+#import "FBPKosherPolicyEngine.h"
+#import "FBPKosherNavigationGuard.h"
+#import "FBPKosherCompatibilityMonitor.h"
 
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
@@ -90,7 +93,22 @@ static void FBPDismissInAppBrowser(UIViewController *webVC) {
 }
 
 static BOOL FBPTryOpenExternally(UIViewController *webVC, NSURL *url) {
-    if (!url || !FBPShouldOpenURLExternally(url)) return NO;
+    if (!url) return NO;
+    if (FBPKosherStrictModeActive()) {
+        FBPKosherPolicyResult *res = [FBPKosherPolicyEngine.shared evaluateURL:url];
+        if (!res.effectiveAllowed) {
+            if ([objc_getAssociatedObject(webVC, kFBPLinkHandledKey) boolValue]) return YES;
+            objc_setAssociatedObject(webVC, kFBPLinkHandledKey, @YES,
+                                     OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            FBPDismissInAppBrowser(webVC);
+            [FBPKosherNavigationGuard presentBlockedScreenForResult:res fromViewController:nil];
+            return YES;
+        }
+        // In Strict Mode, never bypass filtering by forwarding disallowed/unknown links to Safari.
+        return NO;
+    }
+
+    if (!FBPShouldOpenURLExternally(url)) return NO;
     if ([objc_getAssociatedObject(webVC, kFBPLinkHandledKey) boolValue]) return YES;
     objc_setAssociatedObject(webVC, kFBPLinkHandledKey, @YES,
                              OBJC_ASSOCIATION_RETAIN_NONATOMIC);
@@ -135,5 +153,9 @@ static BOOL FBPTryOpenExternally(UIViewController *webVC, NSURL *url) {
 void FBPInitLinkHooks(void) {
     if (objc_getClass("FBWebViewController")) {
         FBP_ONCE(gLinks) { %init(FBPLinks); }
+        [FBPKosherCompatibilityMonitor.shared reportHook:@"Links.FBWebViewController"
+                                                 severity:FBPKosherHookSeveritySurface
+                                                   status:FBPKosherHookStatusInstalled
+                                                   detail:@"FBWebViewController link gate active"];
     }
 }

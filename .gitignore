@@ -50,6 +50,10 @@ test/*.py
 # ---------------------------------------------------------------------------
 test/*
 !test/README.md
+!test/test_kosher_verification.py
+!test/KosherTests/
+!test/KosherTests/**
+test/KosherTests/.build/
 # The scripts in test/ drive *this* phone and stay machine-local. The project's
 # build and verify tooling lives in build.py and scripts/ instead; run the test
 # suite with `python3 scripts/verify.py test`.

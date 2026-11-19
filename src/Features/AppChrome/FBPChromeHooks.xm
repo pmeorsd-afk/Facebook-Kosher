@@ -10,6 +10,11 @@
 #import "FBPUpdateChecker.h"
 #import "FBPSheet.h"
 #import "FBPToast.h"
+#import "FBPKosherPolicyEngine.h"
+#import "FBPKosherCompatibilityMonitor.h"
+#import "FBPKosherMediaGuard.h"
+#import "FBPKosherHomeController.h"
+#import "FBPKosherNavigationGuard.h"
 
 #import <objc/runtime.h>
 
@@ -226,14 +231,31 @@ static UIImageView *FBPFindNavLogo(UIView *root) {
         });
     }
 
+    if (FBPKosherStrictModeActive()) {
+        FBPKosherPurgeMediaCaches();
+    }
+
     [FBPWelcomeController presentIfNeeded];
 
-    // Check GitHub for a newer release a few seconds in, once the UI has settled
-    // (silent unless a newer version the user hasn't seen is available).
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(4.0 * NSEC_PER_SEC)),
+    // Verify startup compatibility and present the Hebrew Kosher Home screen
+    // (or Restricted-State fallback) once Facebook's root chrome mounts,
+    // without covering an active login / 2FA authentication flow.
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.4 * NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{
-        [FBPUpdateChecker checkOnLaunch];
+        [FBPKosherCompatibilityMonitor.shared evaluateStartupHealth];
+        if (FBPKosherStrictModeActive() && ![FBPKosherNavigationGuard isAuthenticationFlowActive]) {
+            [FBPKosherHomeController presentAsRootOverlayIfNeeded];
+        }
     });
+
+    if (!FBPKosherStrictModeActive()) {
+        // Check GitHub for a newer release a few seconds in, once the UI has settled
+        // (silent unless a newer version the user hasn't seen is available).
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(4.0 * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{
+            [FBPUpdateChecker checkOnLaunch];
+        });
+    }
 
     // Facebook's chrome is not up yet at this point; give it a moment before
     // looking for the settings button.

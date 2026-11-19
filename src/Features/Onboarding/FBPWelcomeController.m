@@ -7,6 +7,9 @@
 #import "FBPPrefs.h"
 #import "FBPResources.h"
 #import "FBPSheet.h"
+#import "FBPKosherPolicyEngine.h"
+#import "FBPKosherHomeController.h"
+#import "FBPKosherAdminController.h"
 
 static NSString *const kTelegramURL = @"https://t.me/ReFacebookPlus";
 
@@ -52,6 +55,7 @@ static const CGFloat kButtonHeight  = 54.0;
     // never repaints this screen; the override style only fixes the UISwitch.
     self.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
     self.view.backgroundColor = UIColor.blackColor;
+    FBPApplySemanticDirection(self.view);
 
     [self buildBackground];
 
@@ -144,7 +148,7 @@ static const CGFloat kButtonHeight  = 54.0;
     }
 
     UILabel *name = [[UILabel alloc] init];
-    name.text = @"Facebook Plus";
+    name.text = FBPKosherStrictModeActive() ? FBPL(@"kosher.home.title") : @"Facebook Plus";
     name.font = [UIFont systemFontOfSize:30 weight:UIFontWeightBold];
     name.textColor = UIColor.whiteColor;
     [row addArrangedSubview:name];
@@ -227,7 +231,7 @@ static const CGFloat kButtonHeight  = 54.0;
     [bar addSubview:toggleCard];
 
     UILabel *dontShowLabel = [[UILabel alloc] init];
-    dontShowLabel.text = @"Don't show this popup again";
+    dontShowLabel.text = FBPL(@"kosher.welcome.dontShow");
     dontShowLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightMedium];
     dontShowLabel.textColor = UIColor.whiteColor;
     dontShowLabel.translatesAutoresizingMaskIntoConstraints = NO;
@@ -239,25 +243,37 @@ static const CGFloat kButtonHeight  = 54.0;
     _dontShowSwitch.translatesAutoresizingMaskIntoConstraints = NO;
     [toggleCard addSubview:_dontShowSwitch];
 
-    // Card 2 — a separate card holding the two contact buttons, split down the middle.
+    // Card 2 — In Strict Mode: Admin Setup CTA (no external Telegram links).
     UIView *footerCard = [self cardView];
     [bar addSubview:footerCard];
 
-    UIButton *telegram = [self contactButtonWithImage:@"telegram" title:@"Telegram"
-                                             tintImage:NO action:@selector(openTelegram)];
-    UIButton *github = [self contactButtonWithImage:@"github" title:@"GitHub"
-                                          tintImage:YES action:@selector(openGitHub)];
-    [footerCard addSubview:telegram];
-    [footerCard addSubview:github];
+    UIButton *telegram = nil;
+    UIButton *github = nil;
+    UIView *divider = nil;
+    UIButton *adminButton = nil;
+    if (FBPKosherStrictModeActive()) {
+        adminButton = [self contactButtonWithImage:@"setting"
+                                             title:FBPL(@"kosher.admin.title")
+                                         tintImage:YES
+                                            action:@selector(openAdminSetup)];
+        [footerCard addSubview:adminButton];
+    } else {
+        telegram = [self contactButtonWithImage:@"telegram" title:@"Telegram"
+                                      tintImage:NO action:@selector(openTelegram)];
+        github = [self contactButtonWithImage:@"github" title:@"GitHub"
+                                    tintImage:YES action:@selector(openGitHub)];
+        [footerCard addSubview:telegram];
+        [footerCard addSubview:github];
 
-    UIView *divider = [[UIView alloc] init];
-    divider.backgroundColor = [UIColor colorWithWhite:1.0 alpha:0.14];
-    divider.translatesAutoresizingMaskIntoConstraints = NO;
-    [footerCard addSubview:divider];
+        divider = [[UIView alloc] init];
+        divider.backgroundColor = [UIColor colorWithWhite:1.0 alpha:0.14];
+        divider.translatesAutoresizingMaskIntoConstraints = NO;
+        [footerCard addSubview:divider];
+    }
 
     // Primary button.
     UIButton *continueButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    [continueButton setTitle:@"Get Started" forState:UIControlStateNormal];
+    [continueButton setTitle:FBPL(@"kosher.welcome.getStarted") forState:UIControlStateNormal];
     continueButton.titleLabel.font = [UIFont systemFontOfSize:18 weight:UIFontWeightSemibold];
     [continueButton setTitleColor:[UIColor colorWithRed:0.04 green:0.08 blue:0.14 alpha:1.0]
                          forState:UIControlStateNormal];
@@ -293,21 +309,6 @@ static const CGFloat kButtonHeight  = 54.0;
         [footerCard.trailingAnchor constraintEqualToAnchor:bar.trailingAnchor constant:-kSideMargin],
         [footerCard.heightAnchor constraintEqualToConstant:56],
 
-        [telegram.leadingAnchor constraintEqualToAnchor:footerCard.leadingAnchor],
-        [telegram.topAnchor constraintEqualToAnchor:footerCard.topAnchor],
-        [telegram.bottomAnchor constraintEqualToAnchor:footerCard.bottomAnchor],
-        [telegram.trailingAnchor constraintEqualToAnchor:footerCard.centerXAnchor],
-
-        [github.trailingAnchor constraintEqualToAnchor:footerCard.trailingAnchor],
-        [github.topAnchor constraintEqualToAnchor:footerCard.topAnchor],
-        [github.bottomAnchor constraintEqualToAnchor:footerCard.bottomAnchor],
-        [github.leadingAnchor constraintEqualToAnchor:footerCard.centerXAnchor],
-
-        [divider.centerXAnchor constraintEqualToAnchor:footerCard.centerXAnchor],
-        [divider.widthAnchor constraintEqualToConstant:1.0 / UIScreen.mainScreen.scale],
-        [divider.topAnchor constraintEqualToAnchor:footerCard.topAnchor constant:12],
-        [divider.bottomAnchor constraintEqualToAnchor:footerCard.bottomAnchor constant:-12],
-
         // Primary button.
         [continueButton.topAnchor constraintEqualToAnchor:footerCard.bottomAnchor constant:16],
         [continueButton.leadingAnchor constraintEqualToAnchor:bar.leadingAnchor constant:kSideMargin],
@@ -315,6 +316,31 @@ static const CGFloat kButtonHeight  = 54.0;
         [continueButton.heightAnchor constraintEqualToConstant:kButtonHeight],
         [continueButton.bottomAnchor constraintEqualToAnchor:bar.safeAreaLayoutGuide.bottomAnchor constant:-14],
     ]];
+    if (adminButton) {
+        [NSLayoutConstraint activateConstraints:@[
+            [adminButton.leadingAnchor constraintEqualToAnchor:footerCard.leadingAnchor],
+            [adminButton.trailingAnchor constraintEqualToAnchor:footerCard.trailingAnchor],
+            [adminButton.topAnchor constraintEqualToAnchor:footerCard.topAnchor],
+            [adminButton.bottomAnchor constraintEqualToAnchor:footerCard.bottomAnchor],
+        ]];
+    } else if (telegram && github && divider) {
+        [NSLayoutConstraint activateConstraints:@[
+            [telegram.leadingAnchor constraintEqualToAnchor:footerCard.leadingAnchor],
+            [telegram.topAnchor constraintEqualToAnchor:footerCard.topAnchor],
+            [telegram.bottomAnchor constraintEqualToAnchor:footerCard.bottomAnchor],
+            [telegram.trailingAnchor constraintEqualToAnchor:footerCard.centerXAnchor],
+
+            [github.trailingAnchor constraintEqualToAnchor:footerCard.trailingAnchor],
+            [github.topAnchor constraintEqualToAnchor:footerCard.topAnchor],
+            [github.bottomAnchor constraintEqualToAnchor:footerCard.bottomAnchor],
+            [github.leadingAnchor constraintEqualToAnchor:footerCard.centerXAnchor],
+
+            [divider.centerXAnchor constraintEqualToAnchor:footerCard.centerXAnchor],
+            [divider.widthAnchor constraintEqualToConstant:1.0 / UIScreen.mainScreen.scale],
+            [divider.topAnchor constraintEqualToAnchor:footerCard.topAnchor constant:12],
+            [divider.bottomAnchor constraintEqualToAnchor:footerCard.bottomAnchor constant:-12],
+        ]];
+    }
     return bar;
 }
 
@@ -384,17 +410,17 @@ static const CGFloat kButtonHeight  = 54.0;
 - (NSArray<NSDictionary *> *)pages {
     return @[
         @{@"image" : @"incognito",
-          @"title" : @"Slip in unseen",
-          @"desc"  : @"Open a story and no read receipt leaves your device — you send it only if and when you decide to."},
+          @"title" : FBPL(@"kosher.welcome.f1.title"),
+          @"desc"  : FBPL(@"kosher.welcome.f1.desc")},
         @{@"image" : @"alert",
-          @"title" : @"No misfires",
-          @"desc"  : @"A short confirm sits between a careless tap and a like you never meant to give."},
+          @"title" : FBPL(@"kosher.welcome.f2.title"),
+          @"desc"  : FBPL(@"kosher.welcome.f2.desc")},
         @{@"image" : @"setting",
-          @"title" : @"One tidy panel",
-          @"desc"  : @"Every switch lives in a single sheet, and each one stays off until you flip it yourself."},
+          @"title" : FBPL(@"kosher.welcome.f3.title"),
+          @"desc"  : FBPL(@"kosher.welcome.f3.desc")},
         @{@"image" : @"magic",
-          @"title" : @"A calmer app",
-          @"desc"  : @"Trim ads and suggestions, switch on a true-black night look, and repaint the icon — small touches, out of your way."},
+          @"title" : FBPL(@"kosher.welcome.f4.title"),
+          @"desc"  : FBPL(@"kosher.welcome.f4.desc")},
     ];
 }
 
@@ -404,13 +430,22 @@ static const CGFloat kButtonHeight  = 54.0;
     // The toggle is the user's choice about future auto-shows: on = never again.
     [FBPPrefs.shared setBool:self.dontShowSwitch.isOn forKey:FBPKeyIntroduced];
     [FBPPrefs.shared commit];
-    [self dismissViewControllerAnimated:YES completion:nil];
+    [self dismissViewControllerAnimated:YES completion:^{
+        if (FBPKosherStrictModeActive()) {
+            [FBPKosherHomeController presentAsRootOverlayIfNeeded];
+        }
+    }];
+}
+
+- (void)openAdminSetup {
+    [FBPKosherAdminController presentFromViewController:self];
 }
 
 - (void)openTelegram { [self openURLString:kTelegramURL]; }
 - (void)openGitHub   { [self openURLString:[FBPUpdateChecker githubProfileURL]]; }
 
 - (void)openURLString:(NSString *)string {
+    if (FBPKosherStrictModeActive()) return;
     NSURL *url = [NSURL URLWithString:string];
     if (url) [UIApplication.sharedApplication openURL:url options:@{} completionHandler:nil];
 }

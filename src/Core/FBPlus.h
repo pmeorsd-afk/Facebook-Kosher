@@ -53,6 +53,10 @@ extern NSNotificationName const FBPSettingsDidChangeNotification;
 extern NSNotificationName const FBPTabBarVisibilityDidChangeNotification;
 extern NSString *const FBPTabBarFractionKey;
 
+/// Posted whenever the Kosher policy store (strict mode, allowlist,
+/// Marketplace permission, or compatibility state) updates.
+extern NSNotificationName const FBPKosherPolicyDidChangeNotification;
+
 #pragma mark - Preference keys
 
 // Feed
@@ -133,6 +137,15 @@ extern NSString *const FBPKeyLanguage;          // In-tweak UI language ("" = En
 extern NSString *const FBPKeyIntroduced;        // Onboarding has been shown
 extern NSString *const FBPKeyLastNotifiedVersion; // Latest release the user was told about
 extern NSString *const FBPKeyResolvedGitHubOwner; // GitHub owner last found live (primary or mirror)
+
+// Kosher Policy & Accessibility
+extern NSString *const FBPKeyKosherStrictMode;           // Strict allowlist + text-only enforcement (default YES)
+extern NSString *const FBPKeyKosherMarketplaceEnabled;   // Admin-enabled Marketplace permission (default NO, requires verification)
+extern NSString *const FBPKeyKosherHighContrast;         // High-contrast Kosher UI mode
+extern NSString *const FBPKeyKosherLargeText;            // Large accessible typography multiplier
+extern NSString *const FBPKeyKosherReducedMotion;        // Reduce animations across Kosher surfaces
+extern NSString *const FBPKeyKosherSafeNotificationsOnly; // Suppress unverified/entertainment notification previews (default YES)
+extern NSString *const FBPKeyKosherLocalTextModeration;  // Optional deterministic on-device text moderation filter (default NO)
 
 #pragma mark - Confirmations
 

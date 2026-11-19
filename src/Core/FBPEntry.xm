@@ -4,6 +4,12 @@
 
 #import "FBPlus.h"
 #import "FBPPrefs.h"
+#import "FBPKosherPolicyStore.h"
+#import "FBPKosherCompatibilityMonitor.h"
+#import "FBPKosherPolicyEngine.h"
+#import "FBPKosherMediaGuard.h"
+#import "FBPKosherNavigationGuard.h"
+#import "FBPKosherNotificationGuard.h"
 
 #import <mach-o/dyld.h>
 
@@ -47,6 +53,9 @@ extern "C" void FBPVP9BridgePrewarm(void);
 /// Runs every installer. Each group latches itself with FBP_ONCE, so calling
 /// this repeatedly installs each hook exactly once.
 static void FBPInstallHooks(void) {
+    FBPInitKosherMediaGuard();
+    FBPInitKosherNavigationGuard();
+    FBPInitKosherNotificationGuard();
     FBPInitFeedHooks();
     FBPInitFeedSurveyHooks();
     FBPInitAdsHooks();
@@ -61,7 +70,9 @@ static void FBPInstallHooks(void) {
     FBPInitHDRHooks();
     FBPInitPlusHooks();
     FBPInitFontHooks();
-    FBPInitReelsDownloader();
+    if (!FBPKosherStrictModeActive()) {
+        FBPInitReelsDownloader();
+    }
     FBPInitLinkHooks();
     FBPInitLinkBridge();
     FBPInitCallBlocker();
@@ -85,6 +96,10 @@ static void FBPImageDidLoad(const struct mach_header *header, intptr_t slide) {
 
         // Registers defaults before any hook can read a preference.
         (void)FBPPrefs.shared;
+        (void)FBPKosherPolicyStore.shared;
+        (void)FBPKosherCompatibilityMonitor.shared;
+        (void)FBPKosherPolicyEngine.shared;
+        FBPKosherPurgeMediaCaches();
 
         // Clear the kept log once a day (local midnight), then prime the
         // device-name lookup and open the diagnostic log.
@@ -95,6 +110,7 @@ static void FBPImageDidLoad(const struct mach_header *header, intptr_t slide) {
 
         // Installs what is available now, and again as each framework arrives.
         FBPInstallHooks();
+        [FBPKosherCompatibilityMonitor.shared evaluateStartupHealth];
         _dyld_register_func_for_add_image(&FBPImageDidLoad);
 
         // Returns immediately; the work happens on a utility queue. Outside

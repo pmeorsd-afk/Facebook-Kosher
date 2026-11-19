@@ -70,7 +70,21 @@ FacebookPlus_FILES = \
 	src/PluginsInject/SecRebinds.xm \
 	src/PluginsInject/SideloadFix.xm \
 	src/PluginsInject/NotifDiag.mm \
-	src/Core/fishhook/fishhook.c
+	src/Core/fishhook/fishhook.c \
+	src/Kosher/FBPKosherTypes.m \
+	src/Kosher/FBPKosherDiagnostics.m \
+	src/Kosher/FBPKosherCompatibilityMonitor.m \
+	src/Kosher/FBPKosherPolicyStore.m \
+	src/Kosher/FBPKosherModeration.m \
+	src/Kosher/FBPKosherPolicyEngine.m \
+	src/Kosher/FBPKosherContentFilter.m \
+	src/Kosher/FBPKosherMarketplaceGuard.m \
+	src/Kosher/FBPKosherMediaGuard.xm \
+	src/Kosher/FBPKosherSearchGuard.m \
+	src/Kosher/FBPKosherNotificationGuard.xm \
+	src/Kosher/FBPKosherAdminController.m \
+	src/Kosher/FBPKosherHomeController.m \
+	src/Kosher/FBPKosherNavigationGuard.xm
 
 # The tweak's own version, read from control, exposed to the code as FBP_VERSION
 # (an NSString literal) so the update checker can compare against GitHub releases.
@@ -101,7 +115,8 @@ FBP_INCLUDE_DIRS = \
 	src/Features/Onboarding \
 	src/Features/Stories \
 	src/Features/Update \
-	src/PluginsInject
+	src/PluginsInject \
+	src/Kosher
 
 FacebookPlus_CFLAGS  = -fobjc-arc -Wno-deprecated-declarations \
 	-DFBP_VERSION='@"$(FBP_VERSION)"' \
@@ -117,7 +132,7 @@ ifeq ($(FBP_DIAG),1)
 FacebookPlus_CFLAGS += -DFBP_DIAG=1
 endif
 
-FacebookPlus_FRAMEWORKS = UIKit Foundation Photos QuartzCore CoreGraphics CoreText AVFoundation CoreMedia CoreVideo VideoToolbox Security PushKit CallKit UserNotifications
+FacebookPlus_FRAMEWORKS = UIKit Foundation Photos QuartzCore CoreGraphics CoreText AVFoundation CoreMedia CoreVideo VideoToolbox Security PushKit CallKit UserNotifications WebKit
 
 include $(THEOS_MAKE_PATH)/tweak.mk
 

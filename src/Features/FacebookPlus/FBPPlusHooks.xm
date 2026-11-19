@@ -29,6 +29,7 @@
 #import "FBPlus.h"
 #import "FBPPrefs.h"
 #import "FBPTrace.h"
+#import "FBPKosherPolicyEngine.h"
 
 #import <objc/runtime.h>
 
@@ -39,8 +40,9 @@ static BOOL gPlusEnabled = NO;
 static BOOL gPlusTrial   = NO;   // unlock mode: NO = "direct" (force gates), YES = "trial"
 
 static void FBPRefreshPlus(void) {
-    gPlusEnabled = FBPEnabled(FBPKeyMetaPlus);
-    gPlusTrial   = [[FBPPrefs.shared stringForKey:FBPKeyMetaPlusMode] isEqualToString:@"trial"];
+    BOOL strict = FBPKosherStrictModeActive();
+    gPlusEnabled = !strict && FBPEnabled(FBPKeyMetaPlus);
+    gPlusTrial   = !strict && [[FBPPrefs.shared stringForKey:FBPKeyMetaPlusMode] isEqualToString:@"trial"];
 }
 
 // FBSubsBenefitStatusChecker is a Swift class, so it is hooked under a
@@ -184,6 +186,8 @@ static void FBPRefreshPlus(void) {
 
 void FBPInitPlusHooks(void) {
     FBPRefreshPlus();
+    // Entitlement / subscriber preview overrides are disabled in Strict Mode.
+    if (FBPKosherStrictModeActive()) return;
 
     [NSNotificationCenter.defaultCenter
         addObserverForName:FBPSettingsDidChangeNotification

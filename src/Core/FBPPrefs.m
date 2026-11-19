@@ -4,6 +4,7 @@
 #import "FBPPrefs.h"
 
 static NSString *const kSuiteName = @"com.shajon.fbplus";
+static NSString *const kKosherMigratedKey = @"kosherMigratedV1";
 
 @implementation FBPPrefs {
     NSUserDefaults *_defaults;
@@ -20,13 +21,36 @@ static NSString *const kSuiteName = @"com.shajon.fbplus";
     if ((self = [super init])) {
         _defaults = [[NSUserDefaults alloc] initWithSuiteName:kSuiteName];
         [_defaults registerDefaults:[self.class defaultValues]];
+        [self enforceKosherMigrationIfNeeded];
     }
     return self;
 }
 
+/// Ensures upgraded/migrated Facebook-Plus preferences cannot silently turn off
+/// strict mode or re-enable conflicting download/entertainment features.
+- (void)enforceKosherMigrationIfNeeded {
+    if (![_defaults boolForKey:kKosherMigratedKey]) {
+        [_defaults setBool:YES forKey:FBPKeyKosherStrictMode];
+        [_defaults setBool:NO forKey:FBPKeyKosherMarketplaceEnabled];
+        [_defaults setBool:YES forKey:FBPKeyKosherSafeNotificationsOnly];
+        [_defaults setBool:NO forKey:FBPKeyReelsDownloaderEnabled];
+        [_defaults setBool:NO forKey:FBPKeyStoryDownloaderEnabled];
+        [_defaults setBool:NO forKey:FBPKeyDownloadQualityPicker];
+        [_defaults setBool:NO forKey:FBPKeyAnonymousStories];
+        [_defaults setBool:NO forKey:FBPKeyMetaPlus];
+        [_defaults setBool:NO forKey:FBPKeyLinksInSafari];
+        if (![_defaults objectForKey:FBPKeyLanguage]) {
+            [_defaults setObject:@"he" forKey:FBPKeyLanguage];
+        }
+        [_defaults setBool:YES forKey:kKosherMigratedKey];
+        [_defaults synchronize];
+    }
+}
+
 + (NSDictionary<NSString *, id> *)defaultValues {
-    // Every feature ships enabled, so the tweak works out of the box; the user
-    // turns off whatever they do not want. Only onboarding state starts off.
+    // Facebook Kosher ships in Strict Mode with Hebrew UI by default.
+    // Conflicting entertainment, download, incognito, and entitlement bypass
+    // toggles default to NO and remain disabled while strict mode is active.
     return @{
         FBPKeyNoAds            : @YES,
         FBPKeyNoRecs           : @YES,
@@ -45,42 +69,62 @@ static NSString *const kSuiteName = @"com.shajon.fbplus";
         FBPKeyConfirmShare     : @NO,
         FBPKeyConfirmFollow    : @NO,
         FBPKeyConfirmPost      : @NO,
-        FBPKeyReelsDownloaderEnabled : @YES,
-        FBPKeyStoryDownloaderEnabled : @YES,
-        FBPKeyDownloadQualityPicker : @YES,
+        FBPKeyReelsDownloaderEnabled : @NO,
+        FBPKeyStoryDownloaderEnabled : @NO,
+        FBPKeyDownloadQualityPicker : @NO,
         FBPKeyReelsHideOverlay : @YES,
-        FBPKeyAnonymousStories : @YES,
+        FBPKeyAnonymousStories : @NO,
         FBPKeyNoAutoNext       : @YES,
         FBPKeyFeedLike         : @YES,
         FBPKeyOLED             : @NO,
         FBPKeyOLEDDividers     : @YES,
         FBPKeyDisableHDR       : @NO,
-        // Off by default: this unlocks Facebook's paid subscriber UI (and the
-        // Meta AI quotas) for preview, so it stays a deliberate opt-in rather
-        // than something installing the tweak silently switches on.
         FBPKeyMetaPlus         : @NO,
-        // "direct" forces the reveal gate outright; "trial" makes the app believe
-        // an active Facebook Plus trial is running. Default direct — the most
-        // reliable reveal.
         FBPKeyMetaPlusMode     : @"direct",
-        FBPKeyLinksInSafari    : @YES,
-        // The diagnostic log is kept across launches by default; everything the
-        // tweak does is captured into it, so there are no per-feature log toggles.
+        FBPKeyLinksInSafari    : @NO,
         FBPKeyLogsKeep         : @YES,
         FBPKeyKeychainRebind   : @YES,
         FBPKeyNotifClientSync  : @YES,
         FBPKeyNotifyUpdates    : @YES,
         FBPKeyAutoClearCache   : @YES,
+        FBPKeyLanguage         : @"he",
         FBPKeyIntroduced       : @NO,
+        FBPKeyKosherStrictMode           : @YES,
+        FBPKeyKosherMarketplaceEnabled   : @NO,
+        FBPKeyKosherHighContrast         : @NO,
+        FBPKeyKosherLargeText            : @NO,
+        FBPKeyKosherReducedMotion        : @NO,
+        FBPKeyKosherSafeNotificationsOnly : @YES,
+        FBPKeyKosherLocalTextModeration  : @NO,
     };
 }
 
 - (BOOL)boolForKey:(NSString *)key {
+    if ([key isEqualToString:FBPKeyKosherStrictMode]) {
+        id stored = [_defaults objectForKey:key];
+        return stored ? [stored boolValue] : YES;
+    }
     return [_defaults boolForKey:key];
 }
 
 - (void)setBool:(BOOL)value forKey:(NSString *)key {
+    // Protected policy keys cannot be relaxed through generic settings writes.
+    if ([key isEqualToString:FBPKeyKosherStrictMode] ||
+        [key isEqualToString:FBPKeyKosherMarketplaceEnabled]) {
+        return;
+    }
     [_defaults setBool:value forKey:key];
+}
+
+- (void)applyAdminStrictMode:(BOOL)strictMode {
+    [_defaults setBool:strictMode forKey:FBPKeyKosherStrictMode];
+    [_defaults setBool:YES forKey:kKosherMigratedKey];
+    [self commit];
+}
+
+- (void)applyAdminMarketplaceEnabled:(BOOL)enabled {
+    [_defaults setBool:enabled forKey:FBPKeyKosherMarketplaceEnabled];
+    [self commit];
 }
 
 - (NSString *)stringForKey:(NSString *)key {
@@ -105,9 +149,16 @@ static NSString *const kSuiteName = @"com.shajon.fbplus";
 
 - (void)resetToDefaults {
     BOOL introduced = [self boolForKey:FBPKeyIntroduced];
+    BOOL strictMode = [self boolForKey:FBPKeyKosherStrictMode];
+    BOOL marketplace = [self boolForKey:FBPKeyKosherMarketplaceEnabled];
+    NSString *language = [self stringForKey:FBPKeyLanguage] ?: @"he";
     [_defaults removePersistentDomainForName:kSuiteName];
     [_defaults registerDefaults:[self.class defaultValues]];
     [_defaults setBool:introduced forKey:FBPKeyIntroduced];
+    [_defaults setBool:strictMode forKey:FBPKeyKosherStrictMode];
+    [_defaults setBool:marketplace forKey:FBPKeyKosherMarketplaceEnabled];
+    [_defaults setObject:language forKey:FBPKeyLanguage];
+    [_defaults setBool:YES forKey:kKosherMigratedKey];
     [self commit];
 }
 

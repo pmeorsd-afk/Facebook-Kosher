@@ -128,28 +128,97 @@
 
 @end
 
-#pragma mark - Diagnostics: what the extension was handed, and what it produced
+#pragma mark - Kosher Notification Sanitization & Diagnostics
 
-// FBP_DIAG only. Never compiled into a shipped build: it logs push payloads.
-#if FBP_DIAG
+static NSDictionary *FBPBridgeReadKosherPolicy(void) {
+	NSURL *groupURL = [NSFileManager.defaultManager
+		containerURLForSecurityApplicationGroupIdentifier:@"group.com.facebook.Facebook"];
+	if (!groupURL) return nil;
+	NSURL *mirrorURL = [groupURL URLByAppendingPathComponent:@"fbp_kosher_nse_policy.json"];
+	NSData *data = [NSData dataWithContentsOfURL:mirrorURL];
+	if (!data.length) return nil;
+	id obj = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+	return [obj isKindOfClass:NSDictionary.class] ? obj : nil;
+}
 
-@interface FBPDiagNotificationService: NSObject
+static id FBPBridgeSanitizeNotificationContent(id finalContent) {
+	if (!finalContent) return nil;
+	NSDictionary *policy = FBPBridgeReadKosherPolicy();
+	BOOL strictMode = policy ? ([policy[@"strictMode"] isKindOfClass:NSNumber.class] ? [policy[@"strictMode"] boolValue] : YES) : YES;
+	if (!strictMode) return finalContent;
+
+	BOOL safeOnly = policy ? ([policy[@"safeNotificationsOnly"] isKindOfClass:NSNumber.class] ? [policy[@"safeNotificationsOnly"] boolValue] : YES) : YES;
+	NSArray *approvedGroups = [policy[@"approvedGroupIDs"] isKindOfClass:NSArray.class] ? policy[@"approvedGroupIDs"] : @[];
+	NSArray *approvedPages = [policy[@"approvedPageIDs"] isKindOfClass:NSArray.class] ? policy[@"approvedPageIDs"] : @[];
+
+	id mutableContent = nil;
+	@try {
+		mutableContent = [finalContent mutableCopy];
+	} @catch (__unused NSException *e) {
+		mutableContent = nil;
+	}
+	if (!mutableContent) return finalContent;
+
+	// Strip all media attachments (photos, thumbnails, video previews, GIFs).
+	@try {
+		[mutableContent setValue:@[] forKey:@"attachments"];
+	} @catch (__unused NSException *e) {}
+
+	NSString *title = @"";
+	NSString *body = @"";
+	NSDictionary *userInfo = nil;
+	@try {
+		id t = [mutableContent valueForKey:@"title"];
+		if ([t isKindOfClass:NSString.class]) title = t;
+		id b = [mutableContent valueForKey:@"body"];
+		if ([b isKindOfClass:NSString.class]) body = b;
+		id u = [mutableContent valueForKey:@"userInfo"];
+		if ([u isKindOfClass:NSDictionary.class]) userInfo = u;
+	} @catch (__unused NSException *e) {}
+
+	NSString *combined = [[NSString stringWithFormat:@"%@ %@", title, body] lowercaseString];
+	BOOL prohibitedKeyword =
+		[combined containsString:@"reel"] || [combined containsString:@"story"] ||
+		[combined containsString:@"stories"] || [combined containsString:@"video"] ||
+		[combined containsString:@"people you may know"] || [combined containsString:@"suggested"] ||
+		[combined containsString:@"רילס"] || [combined containsString:@"סטורי"] ||
+		[combined containsString:@"מומלץ"];
+
+	BOOL approvedSource = NO;
+	id gid = userInfo[@"group_id"] ?: userInfo[@"groupId"];
+	if (gid && [approvedGroups containsObject:[NSString stringWithFormat:@"%@", gid]]) {
+		approvedSource = YES;
+	}
+	id pid = userInfo[@"page_id"] ?: userInfo[@"pageId"];
+	if (pid && [approvedPages containsObject:[NSString stringWithFormat:@"%@", pid]]) {
+		approvedSource = YES;
+	}
+
+	if (prohibitedKeyword || (safeOnly && !approvedSource)) {
+		@try {
+			[mutableContent setValue:@"פייסבוק כשר" forKey:@"title"];
+			[mutableContent setValue:@"" forKey:@"subtitle"];
+			[mutableContent setValue:@"התראה חדשה — פתח את פייסבוק כשר לבדיקה." forKey:@"body"];
+		} @catch (__unused NSException *e) {}
+	}
+	return mutableContent;
+}
+
+@interface FBPKosherBridgeNotificationService: NSObject
 - (void)fbp_didReceiveNotificationRequest:(id)request withContentHandler:(void (^)(id))contentHandler;
 - (void)fbp_serviceExtensionTimeWillExpire;
 @end
 
-@implementation FBPDiagNotificationService
+@implementation FBPKosherBridgeNotificationService
 
 // After the exchange this selector holds Facebook's own implementation, so
 // calling it on self is the %orig equivalent.
 - (void)fbp_didReceiveNotificationRequest:(id)request withContentHandler:(void (^)(id))contentHandler {
+#if FBP_DIAG
 	id content = [request valueForKey:@"content"];
 	NSDictionary *userInfo = [content valueForKey:@"userInfo"];
 	NSString *identifier = [request valueForKey:@"identifier"] ?: @"(none)";
 
-	// The identifier is what ties this line to SpringBoard's own
-	// "Delivered user visible push notification <id>" (or its refusal to), so a
-	// capture can follow one push across both processes.
 	NSString *incomingTitle = [content valueForKey:@"title"] ?: @"";
 	NSString *incomingBody  = [content valueForKey:@"body"] ?: @"";
 	FBPDiagLog(@"NSE RAN for request %@ — incoming title '%@' body '%@'",
@@ -159,39 +228,34 @@
 	               componentsJoinedByString:@","] ?: @"(none)");
 
 	NSDate *start = NSDate.date;
+#endif
 	[self fbp_didReceiveNotificationRequest:request
 	                    withContentHandler:^(id finalContent) {
-		NSString *finalTitle = [finalContent valueForKey:@"title"] ?: @"";
-		NSString *finalBody  = [finalContent valueForKey:@"body"] ?: @"";
+		id sanitized = FBPBridgeSanitizeNotificationContent(finalContent);
+#if FBP_DIAG
+		NSString *finalTitle = [sanitized valueForKey:@"title"] ?: @"";
+		NSString *finalBody  = [sanitized valueForKey:@"body"] ?: @"";
 
-		// The one judgement that matters: Facebook's job here is to replace the
-		// stub with real text. If the body came back unchanged the extension ran
-		// and failed to resolve the notification, which is a session problem. If
-		// it changed, this path is working and whatever is still wrong is not
-		// here.
 		BOOL changed = ![finalBody isEqualToString:incomingBody] ||
 		               ![finalTitle isEqualToString:incomingTitle];
 		FBPDiagLog(@"NSE RESULT for %@ after %.2fs: %@ — title '%@' body '%@'",
 		           identifier, -start.timeIntervalSinceNow,
 		           changed ? @"CONTENT REPLACED" : @"UNCHANGED (expansion failed)",
 		           finalTitle, finalBody);
-		if (contentHandler) contentHandler(finalContent);
+#endif
+		if (contentHandler) contentHandler(sanitized);
 	}];
 }
 
-// Reached when Facebook has not called the content handler in time and iOS is
-// about to deliver the unmodified payload. Silent otherwise, so a line here is
-// itself the finding: the extension started, did not finish, and the user got
-// the stub.
 - (void)fbp_serviceExtensionTimeWillExpire {
+#if FBP_DIAG
 	FBPDiagLog(@"NSE TIME EXPIRED — Facebook never called the content handler; "
 	           @"iOS will deliver the original payload");
+#endif
 	[self fbp_serviceExtensionTimeWillExpire];
 }
 
 @end
-
-#endif
 
 #pragma mark - Install
 
@@ -240,11 +304,6 @@ __attribute__((constructor)) static void FBPNotifyBridgeInit() {
 						@selector(_initWithSuiteName:container:),
 						@selector(initFBPWithSuiteName:container:));
 
-#if FBP_DIAG
-		// The extension's principal class comes out of its own Info.plist rather
-		// than being hardcoded, because that is where iOS itself reads it and a
-		// Facebook release is free to rename the class. "FBNotificationService"
-		// stays only as the fallback.
 		NSDictionary *extension = NSBundle.mainBundle.infoDictionary[@"NSExtension"];
 		NSString *principal = [extension isKindOfClass:NSDictionary.class]
 		                          ? extension[@"NSExtensionPrincipalClass"]
@@ -256,10 +315,6 @@ __attribute__((constructor)) static void FBPNotifyBridgeInit() {
 		           service ? NSStringFromClass(service) : @"(not found)",
 		           principal.length ? @"Info.plist" : @"fallback name");
 
-		// The traces live on their own class, so graft each implementation onto
-		// the principal class before exchanging — fbpExchange needs both methods
-		// on the same class, and it verifies they exist, so a Facebook that
-		// drops one of these selectors costs that trace and nothing else.
 		if (service) {
 			SEL replacements[2] = {
 				@selector(fbp_didReceiveNotificationRequest:withContentHandler:),
@@ -270,7 +325,7 @@ __attribute__((constructor)) static void FBPNotifyBridgeInit() {
 				@selector(serviceExtensionTimeWillExpire),
 			};
 			for (size_t i = 0; i < 2; i++) {
-				Method donor = class_getInstanceMethod([FBPDiagNotificationService class],
+				Method donor = class_getInstanceMethod([FBPKosherBridgeNotificationService class],
 				                                       replacements[i]);
 				if (!donor) continue;
 				class_addMethod(service, replacements[i], method_getImplementation(donor),
@@ -278,7 +333,6 @@ __attribute__((constructor)) static void FBPNotifyBridgeInit() {
 				fbpExchange(service, originals[i], replacements[i]);
 			}
 		}
-#endif
 
 		PILog(@"notify bridge loaded into %@ (container=%d, suite=%d)",
 			  NSBundle.mainBundle.bundleIdentifier, container, suite);

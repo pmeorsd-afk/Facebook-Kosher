@@ -153,4 +153,24 @@ NS_ASSUME_NONNULL_BEGIN
 @interface FBNewsFeedCollectionView : UICollectionView
 @end
 
+#pragma mark - Kosher Media / Navigation targets
+
+@interface FBWebImageView : UIImageView
+- (void)setImageURL:(nullable NSURL *)url;
+@end
+
+@interface RCTImageView : UIView
+- (void)setImageSources:(nullable NSArray *)sources;
+@end
+
+@interface FNFAVPlayer : NSObject
+- (void)play;
+- (void)setRate:(float)rate;
+@end
+
+@interface FBVideoPlaybackController : NSObject
+- (void)play;
+- (void)prepareToPlay;
+@end
+
 NS_ASSUME_NONNULL_END

@@ -1,0 +1,10 @@
+{
+  "extension_name": {
+    "message": "פתיחה בפייסבוק כשר",
+    "description": "The display name for the extension in Hebrew."
+  },
+  "extension_description": {
+    "message": "מעביר קישורי פייסבוק מספארי אל פייסבוק כשר לבדיקת הרשאה.",
+    "description": "The extension description in Hebrew."
+  }
+}
